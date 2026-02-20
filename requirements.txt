@@ -1,0 +1,8 @@
+pandas
+pytz
+sqlalchemy
+pytest
+u8darts[torch]
+matplotlib
+mariadb
+python-dotenv
