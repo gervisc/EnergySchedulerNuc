@@ -22,9 +22,9 @@ def test_predict_next_24_hours_consumption_smoke():
                 if key and value and key not in os.environ:
                     os.environ[key] = value
 
-    model_path = os.environ.get("ENERGYMODELPATH")
+    model_path = os.environ.get("ENERGYMODEL_TIDE_PATH")
     if not model_path:
-        pytest.skip("ENERGYMODELPATH must be set for this test")
+        pytest.skip("ENERGYMODEL_TIDE_PATH must be set for this test")
 
     db_conn = os.environ.get("energydb") or os.environ.get("ENERGYDB")
     if not db_conn:
@@ -66,14 +66,14 @@ def test_predict_next_24_hours_solar_smoke():
                 if key and value and key not in os.environ:
                     os.environ[key] = value
 
-    model_path = os.environ.get("ENERGYMODELPATH")
+    model_path = os.environ.get("ENERGYMODEL_SOLAR_PATH")
     if not model_path:
-        pytest.skip("ENERGYMODELPATH must be set for this test")
+        pytest.skip("ENERGYMODEL_SOLAR_PATH must be set for this test")
     path = Path(model_path)
     if path.is_dir():
         path = path / "solar_yield_model"
     if not path.exists():
-        pytest.skip("ENERGYMODELPATH does not exist; solar model not available")
+        pytest.skip("ENERGYMODEL_SOLAR_PATH does not exist; solar model not available")
 
     db_conn = os.environ.get("energydb") or os.environ.get("ENERGYDB")
     if not db_conn:

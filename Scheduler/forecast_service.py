@@ -9,6 +9,7 @@ from darts.models import LinearRegressionModel, TiDEModel
 
 from common.time_features import FEAT_ORDER, prepare_time_features
 from common.db_repository import DbRepository
+from common.constants import CONSUMPTION_FACTOR
 
 
 class ForecastService:
@@ -24,13 +25,16 @@ class ForecastService:
 
     def load_model(self, model_path: str) -> TiDEModel:
         """Load a saved TiDE model from disk."""
+        path = Path(model_path)
+        if not path.exists():
+            raise ValueError(f"TiDE model path does not exist: {model_path}")
         return TiDEModel.load(model_path)
 
     def load_solar_model(self, model_path: str) -> LinearRegressionModel:
         """Load a saved solar yield model from disk."""
         path = Path(model_path)
-        if path.is_dir():
-            path = path / "solar_yield_model"
+        if not path.exists():
+            raise ValueError(f"Solar model path does not exist: {model_path}")
         return LinearRegressionModel.load(str(path))
 
     def predict_next_24_hours_consumption(
@@ -44,9 +48,9 @@ class ForecastService:
         and time-based covariates for history + horizon.
         """
         if model is None:
-            model_path = os.environ.get("ENERGYMODELPATH")
+            model_path = os.environ.get("ENERGYMODEL_TIDE_PATH")
             if not model_path:
-                raise ValueError("ENERGYMODELPATH is not set; cannot load forecast model")
+                raise ValueError("ENERGYMODEL_TIDE_PATH is not set; cannot load forecast model")
             model = self.load_model(model_path)
 
         history = self.prepare_last_48_hours_consumption()
@@ -110,7 +114,20 @@ class ForecastService:
             future_covariates=covariates,
         )
 
-        return pred
+        pred_df = pred.to_dataframe()
+        pred_df = pred_df.clip(lower=0)
+        value_cols = pred_df.columns.difference(["time"])
+        pred_df[value_cols] = pred_df[value_cols] / CONSUMPTION_FACTOR
+        pred_df = pred_df.reset_index()
+        if "time" not in pred_df.columns:
+            first_col = pred_df.columns[0]
+            pred_df = pred_df.rename(columns={first_col: "time"})
+        return TimeSeries.from_dataframe(
+            pred_df,
+            time_col="time",
+            value_cols=pred_df.columns.difference(["time"]).tolist(),
+            fill_missing_dates=True,
+        )
 
     def predict_next_24_hours_solar(
         self,
@@ -119,9 +136,9 @@ class ForecastService:
     ) -> TimeSeries:
         """Predict the next 24 hours of solar yield using weather + time features."""
         if model is None:
-            model_path = os.environ.get("ENERGYMODELPATH")
+            model_path = os.environ.get("ENERGYMODEL_SOLAR_PATH")
             if not model_path:
-                raise ValueError("ENERGYMODELPATH is not set; cannot load solar model")
+                raise ValueError("ENERGYMODEL_SOLAR_PATH is not set; cannot load solar model")
             model = self.load_solar_model(model_path)
 
         weather_rows = self.repo.get_current_and_next_24_hours_weather()
@@ -185,6 +202,7 @@ class ForecastService:
                 "solar_total": y_pred,
             }
         )
+        pred_df["solar_total"] = pred_df["solar_total"].clip(lower=0)
 
         return TimeSeries.from_dataframe(
             pred_df,
@@ -212,7 +230,7 @@ class ForecastService:
         buckets: List[Tuple[datetime.datetime, float]] = []
         current = start
         while current < end:
-            buckets.append((current, consumption_by_hour.get(current, 0.0)))
+            buckets.append((current, consumption_by_hour.get(current, 0.0)*CONSUMPTION_FACTOR))
             current += datetime.timedelta(hours=1)
 
         return buckets

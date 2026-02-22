@@ -8,7 +8,8 @@ from typing import Optional, Tuple, List
 from sqlalchemy import and_, create_engine, func, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from common.entities import Base, WeatherRecord, AnkerData, AnkerDataOld, DailyCounter
+from common.entities import Base, WeatherRecord, AnkerData, AnkerDataOld, DailyCounter, EnergyPrice, CurrentState, Scheduler
+from common.constants import CONSUMPTION_FACTOR
 
 
 class DbRepository:
@@ -54,7 +55,7 @@ class DbRepository:
         query = (
             self.session.query(
                 DailyCounter.bucket.label("hour"),
-                func.sum(func.coalesce(DailyCounter.delta, 0)*1000).label("consumption"),
+                func.sum(func.coalesce(DailyCounter.delta, 0) ).label("consumption"),
             )
             .filter(
                 DailyCounter.bucket >= start,
@@ -209,4 +210,132 @@ class DbRepository:
                 wind_speed,
             ) in rows
         ]
+
+    def get_current_and_next_24_hours_prices(self):
+        """Return the current electricity price and all future prices (UTC)."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        start = now.replace(minute=0, second=0, microsecond=0)
+
+        future_rows = (
+            self.session.query(
+                EnergyPrice.timestamp,
+                EnergyPrice.price,
+                EnergyPrice.price_excl_tax,
+            )
+            .filter(
+                EnergyPrice.timestamp >= start,
+            )
+            .order_by(EnergyPrice.timestamp)
+            .all()
+        )
+
+        future = [
+            (
+                timestamp.replace(tzinfo=datetime.timezone.utc),
+                price,
+                price_excl_tax,
+            )
+            for timestamp, price, price_excl_tax in future_rows
+        ]
+
+        return future
+
+    def get_current_battery_state(self):
+        """Return the latest battery state of charge from hm_current_state (UTC)."""
+        row = (
+            self.session.query(CurrentState.last_updated, CurrentState.value)
+            .filter(CurrentState.name == "sensor.solarbank_2_e1600_ac_state_of_charge")
+            .order_by(CurrentState.last_updated.desc())
+            .first()
+        )
+        if not row:
+            return None
+        ts, value = row
+        return ts.replace(tzinfo=datetime.timezone.utc), value
+
+    def upsert_scheduler_rows(
+        self,
+        rows: List[
+            Tuple[
+                datetime.datetime,
+                Optional[bool],
+                Optional[bool],
+                Optional[bool],
+                Optional[float],
+                Optional[float],
+                Optional[float],
+                Optional[float],
+            ]
+        ],
+    ) -> None:
+        """Upsert scheduler rows and delete entries older than 48 hours (UTC)."""
+        for (
+            timestamp,
+            charge_on,
+            solar_charge_on,
+            discharge_on,
+            solar,
+            consumption,
+            grid,
+            battery,
+        ) in rows:
+            self.session.merge(
+                Scheduler(
+                    timestamp=timestamp,
+                    charge_on=charge_on,
+                    solar_charge_on=solar_charge_on,
+                    discharge_on=discharge_on,
+                    solar=solar,
+                    consumption=consumption,
+                    grid=grid,
+                    battery=battery,
+                )
+            )
+
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)
+        self.session.query(Scheduler).filter(Scheduler.timestamp < cutoff).delete(
+            synchronize_session=False
+        )
+        self.session.commit()
+
+    def get_expected_discharge_sell_price(self) -> Optional[float]:
+        """Return weighted-average energy price for discharged energy over last 7 days (UTC)."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        end = now.replace(minute=0, second=0, microsecond=0)
+        start = end - datetime.timedelta(days=7)
+
+        discharge_hour = func.from_unixtime(
+            func.floor(func.unix_timestamp(AnkerDataOld.Timestamp) / 3600) * 3600
+        ).label("hour")
+
+        discharge_subq = (
+            self.session.query(
+                discharge_hour,
+                func.sum(func.coalesce(AnkerDataOld.battery_discharge_total, 0)).label("discharge_kwh"),
+            )
+            .filter(AnkerDataOld.Timestamp >= start)
+            .group_by(discharge_hour)
+            .subquery()
+        )
+
+        row = (
+            self.session.query(
+                func.sum(discharge_subq.c.discharge_kwh * EnergyPrice.price).label("weighted_sum"),
+                func.sum(discharge_subq.c.discharge_kwh).label("total_discharge"),
+            )
+            .join(EnergyPrice, EnergyPrice.timestamp == discharge_subq.c.hour)
+            .first()
+        )
+
+        if not row:
+            return None
+        weighted_sum, total_discharge = row
+        if not total_discharge:
+            avg_price = (
+                self.session.query(func.avg(EnergyPrice.price))
+                .filter(EnergyPrice.timestamp >= start)
+                .scalar()
+            )
+            return float(avg_price) if avg_price is not None else None
+        return float(weighted_sum / total_discharge)
         

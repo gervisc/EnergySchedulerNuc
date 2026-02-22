@@ -3,3 +3,6 @@
 /.vscode
 /Models
 /env.local
+__pycache__/
+*.pyc
+*.pyo

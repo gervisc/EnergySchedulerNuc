@@ -57,3 +57,23 @@ class AnkerDataOld(Base):
     battery_health = Column(Float, nullable=True)
     battery_diff = Column(Float, nullable=True)
     battery_discharge_total = Column(Float, nullable=True)
+
+class CurrentState(Base):
+    __tablename__ = 'hm_current_state'
+    __table_args__ = {'schema': 'energy'}
+    last_updated = Column('last_updated', DateTime, nullable=False, primary_key=True)
+    value = Column('state', Float, nullable=False)
+    name = Column('entity_id', String(255), nullable=False)
+
+
+class Scheduler(Base):
+    __tablename__ = 'scheduler'
+    __table_args__ = {'schema': 'energy'}
+    timestamp = Column(DateTime, nullable=False, primary_key=True)
+    charge_on = Column(Boolean, nullable=True)
+    solar_charge_on = Column(Boolean, nullable=True)
+    discharge_on = Column(Boolean, nullable=True)
+    solar = Column(Float, nullable=True)
+    consumption = Column(Float, nullable=True)
+    grid = Column(Float, nullable=True)
+    battery = Column(Float, nullable=True)
