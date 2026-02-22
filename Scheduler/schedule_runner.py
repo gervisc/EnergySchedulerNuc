@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Optional, Tuple
 
+
 import pyomo.environ as pyo
 
 from common.db_repository import DbRepository
@@ -13,7 +14,17 @@ from pyomo.opt.results import SolverResults
 from typing import Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
+# Create a formatter for the log messages
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+# Create a console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)  # Set the log level for the console handler
+console_handler.setFormatter(formatter)  # Apply the formatter to the console handler
+
+# Add both handlers to the logger
+#logger.addHandler(file_handler)
+LOGGER.addHandler(console_handler)
 
 def _series_to_list(series, horizon: Optional[int] = None) -> list[float]:
     df = series.to_dataframe()
