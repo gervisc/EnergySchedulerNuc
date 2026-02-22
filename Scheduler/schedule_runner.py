@@ -15,6 +15,7 @@ from typing import Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
 # Create a formatter for the log messages
+LOGGER.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # Create a console handler
