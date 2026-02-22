@@ -207,4 +207,4 @@ def run_optimization_and_store(
 
 
 if __name__ == "__main__":
-    run_optimization()
+    run_optimization_and_store()
