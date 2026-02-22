@@ -1,8 +1,8 @@
 pandas
 pytz
-sqlalchemy
-pytest
-u8darts[torch]
-matplotlib
+SQLAlchemy
 mariadb
 python-dotenv
+requests
+pyomo
+u8darts[torch]
