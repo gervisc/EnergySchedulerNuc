@@ -9,6 +9,8 @@ from common.db_repository import DbRepository
 from Scheduler.forecast_service import ForecastService
 from Scheduler.homeassistant import update_battery_actions
 from Scheduler.optimizer import OptimizationInputs, build_battery_milp
+from pyomo.opt.results import SolverResults
+from typing import Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
 
@@ -84,7 +86,7 @@ def run_optimization(
     horizon: int = 24,
     solver_name: str = "glpk",
     time_limit_sec: Optional[int] = None,
-) -> Tuple[pyo.ConcreteModel, Optional[pyo.SolverResults], OptimizationInputs]:
+) -> Tuple[pyo.ConcreteModel, Optional[SolverResults], OptimizationInputs]:
     with DbRepository() as repo:
         forecast_service = ForecastService(repo)
         inputs = build_inputs_from_db(repo, forecast_service, horizon=horizon)

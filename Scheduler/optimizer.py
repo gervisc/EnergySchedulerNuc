@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import pyomo.environ as pyo
-
+from pyomo.opt.results import SolverResults
+from typing import Optional, Tuple
 
 @dataclass
 class OptimizationInputs:
@@ -72,9 +73,8 @@ def build_battery_milp(
                 m.soc_kwh[t] ==  prev_energy + 
                 m.solar_charge_on[t] * inputs.solar_kwh[t] * dt_hours[t] 
                 - m.discharge_on[t] * discharge_rate / charge_efficiency * dt_hours[t]
-                + m.charge_on[t] * charge_rate  * dt_hours[t]                   
+                + m.charge_on[t] * charge_rate * charge_efficiency * dt_hours[t]                   
                 -battery_loss* dt_hours[t]
-        
         )
 
     m.soc_update = pyo.Constraint(m.T, rule=battery_balance_rule)
@@ -83,14 +83,14 @@ def build_battery_milp(
 
 
     # Constraint definition: grid import (no-export vs export-allowed).
-    def grid_import_rule(m, t):
+    def grid_rule(m, t):
         return (m.grid_kwh[t] == 
         - (1-m.solar_charge_on[t]) * inputs.solar_kwh[t]* dt_hours[t] 
-        + (m.discharge_on[t]) * discharge_rate * dt_hours[t] 
-        - (m.charge_on[t]) * charge_rate * charge_efficiency* dt_hours[t]
+        - (m.discharge_on[t]) * discharge_rate * dt_hours[t] 
+        + (m.charge_on[t]) * charge_rate * dt_hours[t]
         + inputs.consumption_kwh[t] * dt_hours[t]
         )
-    m.grid = pyo.Constraint(m.T, rule=grid_import_rule)
+    m.grid = pyo.Constraint(m.T, rule=grid_rule)
    
    
    
@@ -117,11 +117,11 @@ def build_battery_milp(
         for t in m.T:
             total_cost += (
                 inputs.price_per_kwh[t] * m.grid_kwh[t]
-                - (m.soc_kwh[t] * inputs.expected_discharge_sell_price * charge_efficiency if t == 0 else 0)
-                + (m.soc_kwh[t] * inputs.expected_discharge_sell_price * charge_efficiency if t == last_t else 0)
+                + (m.soc_kwh[t] * inputs.expected_discharge_sell_price * charge_efficiency if t == 0 else 0)
+                - (m.soc_kwh[t] * inputs.expected_discharge_sell_price * charge_efficiency if t == last_t else 0)
             )
         return total_cost
 
-    m.objective = pyo.Objective(rule=objective_rule, sense=pyo.maximize)
+    m.objective = pyo.Objective(rule=objective_rule, sense=pyo.minimize)
 
     return m
