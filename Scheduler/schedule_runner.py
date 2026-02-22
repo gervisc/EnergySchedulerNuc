@@ -178,6 +178,12 @@ def run_optimization_and_store(
 
     except Exception as e:
         LOGGER.exception("Failed to run optimization and store results: %s", e)
+    LOGGER.info(
+        "Optimization result: usage_mode=%s tariff_group=%s preset=%.1f",
+        usage_mode,
+        tariff_group,
+        preset,
+    )
     update_battery_actions(preset, tariff_group, usage_mode)
 
     return
