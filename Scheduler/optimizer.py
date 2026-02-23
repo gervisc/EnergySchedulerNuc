@@ -117,7 +117,6 @@ def build_battery_milp(
         for t in m.T:
             total_cost += (
                 inputs.price_per_kwh[t] * m.grid_kwh[t]
-                + (m.soc_kwh[t] * inputs.expected_discharge_sell_price * charge_efficiency if t == 0 else 0)
                 - (m.soc_kwh[t] * inputs.expected_discharge_sell_price * charge_efficiency if t == last_t else 0)
             )
         return total_cost
