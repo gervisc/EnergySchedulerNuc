@@ -3,8 +3,6 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import pyomo.environ as pyo
-from pyomo.opt.results import SolverResults
-from typing import Optional, Tuple
 
 @dataclass
 class OptimizationInputs:
@@ -15,24 +13,64 @@ class OptimizationInputs:
     current_soc_kwh: float
 
 
-def _hour_fractions(now_utc: datetime.datetime, horizon: int) -> list[float]:
+def _step_fractions(
+    now_utc: datetime.datetime,
+    horizon: int,
+    step_minutes: int,
+) -> list[float]:
     """Return length (in hours) for each optimization step.
 
-    The first step is shortened to the remaining fraction of the current hour.
+    The first step is shortened to the remaining fraction of the current step.
     """
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
     else:
         now_utc = now_utc.astimezone(datetime.timezone.utc)
 
-    minutes = now_utc.minute + now_utc.second / 60.0 + now_utc.microsecond / 3_600_000_000.0
-    first = max(1.0 - minutes / 60.0, 1e-6)
-    return [first] + [1.0] * (horizon - 1)
+    if step_minutes <= 0 or 60 % step_minutes != 0:
+        raise ValueError("step_minutes must be a positive divisor of 60")
+
+    minutes = (
+        now_utc.minute
+        + now_utc.second / 60.0
+        + now_utc.microsecond / 3_600_000_000.0
+    )
+    remainder = minutes % step_minutes
+    step_hours = step_minutes / 60.0
+    first = max((step_minutes - remainder) / 60.0, 1e-6)
+    return [first] + [step_hours] * (horizon - 1)
+
+
+def expand_inputs_to_steps(
+    inputs: OptimizationInputs,
+    step_minutes: int,
+) -> OptimizationInputs:
+    if step_minutes <= 0 or 60 % step_minutes != 0:
+        raise ValueError("step_minutes must be a positive divisor of 60")
+
+    steps_per_hour = 60 // step_minutes
+    if steps_per_hour == 1:
+        return inputs
+
+    def _expand(values: Sequence[float]) -> list[float]:
+        expanded: list[float] = []
+        for value in values:
+            expanded.extend([float(value)] * steps_per_hour)
+        return expanded
+
+    return OptimizationInputs(
+        consumption_kwh=_expand(inputs.consumption_kwh),
+        solar_kwh=_expand(inputs.solar_kwh),
+        price_per_kwh=_expand(inputs.price_per_kwh),
+        expected_discharge_sell_price=inputs.expected_discharge_sell_price,
+        current_soc_kwh=inputs.current_soc_kwh,
+    )
 
 
 def build_battery_milp(
     inputs: OptimizationInputs,
     now_utc: datetime.datetime | None = None,
+    step_minutes: int = 60,
 ) -> pyo.ConcreteModel:
     """Build a simple MILP for battery charging decisions.
 
@@ -45,7 +83,7 @@ def build_battery_milp(
     if now_utc is None:
         now_utc = datetime.datetime.now(datetime.timezone.utc)
 
-    dt_hours = _hour_fractions(now_utc, horizon)
+    dt_hours = _step_fractions(now_utc, horizon, step_minutes)
 
     m = pyo.ConcreteModel(name="battery_schedule")
     m.T = pyo.RangeSet(0, horizon - 1)

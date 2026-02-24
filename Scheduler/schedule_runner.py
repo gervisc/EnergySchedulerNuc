@@ -9,7 +9,7 @@ import pyomo.environ as pyo
 from common.db_repository import DbRepository
 from Scheduler.forecast_service import ForecastService
 from Scheduler.homeassistant import update_battery_actions
-from Scheduler.optimizer import OptimizationInputs, build_battery_milp
+from Scheduler.optimizer import OptimizationInputs, build_battery_milp, expand_inputs_to_steps
 from pyomo.opt.results import SolverResults
 from typing import Optional, Tuple
 
@@ -98,11 +98,13 @@ def run_optimization(
     horizon: int = 24,
     solver_name: str = "glpk",
     time_limit_sec: Optional[int] = None,
+    step_minutes: int = 60,
 ) -> Tuple[pyo.ConcreteModel, Optional[SolverResults], OptimizationInputs]:
     with DbRepository() as repo:
         forecast_service = ForecastService(repo)
         inputs = build_inputs_from_db(repo, forecast_service, horizon=horizon)
-        model = build_battery_milp(inputs)
+        inputs = expand_inputs_to_steps(inputs, step_minutes)
+        model = build_battery_milp(inputs, step_minutes=step_minutes)
 
         solver = pyo.SolverFactory(solver_name)
         if solver is None or not solver.available():
@@ -119,6 +121,7 @@ def run_optimization_and_store(
     horizon: int = 24,
     solver_name: str = "glpk",
     time_limit_sec: Optional[int] = None,
+    step_minutes: int = 60,
 ) -> None:
     usage_mode = "use_time"
     tariff_group = "off_peak"
@@ -126,8 +129,10 @@ def run_optimization_and_store(
     try:
         with DbRepository() as repo:
             forecast_service = ForecastService(repo)
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
             inputs = build_inputs_from_db(repo, forecast_service, horizon=horizon)
-            model = build_battery_milp(inputs)
+            inputs = expand_inputs_to_steps(inputs, step_minutes)
+            model = build_battery_milp(inputs, now_utc=now_utc, step_minutes=step_minutes)
 
             solver = pyo.SolverFactory(solver_name)
             if solver is None or not solver.available():
@@ -142,8 +147,16 @@ def run_optimization_and_store(
                 len(inputs.solar_kwh),
                 len(inputs.price_per_kwh),
             )
-            start = datetime.datetime.now(datetime.timezone.utc).replace(minute=0, second=0, microsecond=0)
-            timestamps = [start + datetime.timedelta(hours=i) for i in range(horizon_len)]
+            start = now_utc.replace(second=0, microsecond=0)
+            if step_minutes == 60:
+                start = start.replace(minute=0)
+            else:
+                minute = (start.minute // step_minutes) * step_minutes
+                start = start.replace(minute=minute)
+            timestamps = [
+                start + datetime.timedelta(minutes=step_minutes * i)
+                for i in range(horizon_len)
+            ]
 
             rows = []
             for t in model.T:
