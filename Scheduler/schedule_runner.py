@@ -98,7 +98,7 @@ def run_optimization(
     horizon: int = 24,
     solver_name: str = "glpk",
     time_limit_sec: Optional[int] = None,
-    step_minutes: int = 60,
+    step_minutes: int = 15,
 ) -> Tuple[pyo.ConcreteModel, Optional[SolverResults], OptimizationInputs]:
     with DbRepository() as repo:
         forecast_service = ForecastService(repo)
@@ -121,7 +121,7 @@ def run_optimization_and_store(
     horizon: int = 24,
     solver_name: str = "glpk",
     time_limit_sec: Optional[int] = None,
-    step_minutes: int = 60,
+    step_minutes: int = 15,
 ) -> None:
     usage_mode = "use_time"
     tariff_group = "off_peak"
