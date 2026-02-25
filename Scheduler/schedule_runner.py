@@ -192,7 +192,7 @@ def run_optimization_and_store(
             tariff_group = "valley"
         elif discharge_on:
             usage_mode = "manual"
-            preset = (0.4 + float(solar_charge_on)) * 1000.0
+            preset = (0.4 + float(inputs.solar_kwh[first_idx])) * 1000.0
         elif soc_kwh < 1.6 * 0.8:
             usage_mode = "use_time"
             tariff_group = "off_peak"
