@@ -30,8 +30,8 @@ class AnkerData(Base):
     battery_discharge_total = Column(Float, nullable=True)
 
 class DailyCounter(Base):
-    __tablename__ = 'DailyCounter'
-    bucket = Column(DateTime, primary_key=True, nullable=False)
+    __tablename__ = 'hm_daily_counter'
+    bucket_ts = Column(DateTime, primary_key=True, nullable=False)
     entity_id = Column(String(255), primary_key=True, nullable=False)
     delta = Column(Float, nullable=True)
     current_state = Column(Float, nullable=True)

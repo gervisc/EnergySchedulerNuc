@@ -28,6 +28,12 @@ class DbRepository:
     def __init__(self, connection_string: str, logger: logging.Logger) -> None:
         self.logger = logger
         self.connection_string = connection_string
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setLevel(logging.INFO)
+            handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+            self.logger.addHandler(handler)
+            self.logger.setLevel(logging.INFO)
 
         self.engine = create_engine(self.connection_string)
         Base.metadata.create_all(self.engine)
@@ -60,21 +66,39 @@ class DbRepository:
             "sensor.system_pad3400_daily_home_usage",
      ]
 
+        hour_bucket = func.from_unixtime(
+            func.floor(func.unix_timestamp(DailyCounter.bucket_ts) / 3600) * 3600
+        )
         query = (
             self.session.query(
-                DailyCounter.bucket.label("hour"),
-                func.sum(func.coalesce(DailyCounter.delta, 0) ).label("consumption"),
+                hour_bucket.label("hour"),
+                func.sum(func.coalesce(DailyCounter.delta, 0)).label("consumption"),
             )
             .filter(
-                DailyCounter.bucket >= start,
-                DailyCounter.bucket < end,
+                DailyCounter.bucket_ts >= start,
+                DailyCounter.bucket_ts < end,
                 DailyCounter.entity_id.in_(entity_ids),
             )
-            .group_by(DailyCounter.bucket)
-            .order_by(DailyCounter.bucket)
+            .group_by(hour_bucket)
+            .order_by(hour_bucket)
         )
 
-        rows = query.all()
+        try:
+            self.logger.info(
+                "Running consumption query (start=%s, end=%s, entity_ids=%s)",
+                start,
+                end,
+                entity_ids,
+            )
+            rows = query.all()
+        except Exception:
+            self.logger.exception(
+                "Failed to load last 48 hours consumption (start=%s, end=%s, entity_ids=%s)",
+                start,
+                end,
+                entity_ids,
+            )
+            raise
         return [(hour.replace(tzinfo=datetime.timezone.utc), consumption) for hour, consumption in rows]
 
         

@@ -99,11 +99,15 @@ def test_run_optimization_and_store_smoke():
         pytest.skip("ENERGYDB/energydb must be set for this test")
 
     # Smoke test: should run without raising.
-    run_optimization_and_store(
-        horizon=DEFAULT_HORIZON_HOURS,
-        time_limit_sec=5,
-        step_minutes=DEFAULT_STEP_MINUTES,
-    )
+    try:
+        run_optimization_and_store(
+            horizon=DEFAULT_HORIZON_HOURS,
+            time_limit_sec=5,
+            step_minutes=DEFAULT_STEP_MINUTES,
+        )
+    except Exception as exc:
+        print("test_run_optimization_and_store_smoke failed with:", repr(exc))
+        raise
 
 
 def test_print_current_soc():
