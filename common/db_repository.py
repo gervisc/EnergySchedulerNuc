@@ -11,15 +11,23 @@ from sqlalchemy.orm import Session, sessionmaker
 from common.entities import Base, WeatherRecord, AnkerData, AnkerDataOld, DailyCounter, EnergyPrice, CurrentState, Scheduler
 from common.constants import CONSUMPTION_FACTOR
 
+DEFAULT_DB_ENV_VARS = ("energydb", "ENERGYDB")
+
+
+def get_db_connection_string(env_vars: Tuple[str, ...]) -> str:
+    for env_var in env_vars:
+        value = os.environ.get(env_var)
+        if value:
+            return value
+    raise ValueError("Database connection string is not configured (env ENERGYDB missing)")
+
 
 class DbRepository:
     """Repository for database operations backed by SQLAlchemy."""
 
-    def __init__(self, connection_string: Optional[str] = None, logger: Optional[logging.Logger] = None) -> None:
-        self.logger = logger or logging.getLogger(__name__)
-        self.connection_string = connection_string or os.environ.get("energydb")
-        if not self.connection_string:
-            raise ValueError("Database connection string is not configured (env ENERGYDB missing)")
+    def __init__(self, connection_string: str, logger: logging.Logger) -> None:
+        self.logger = logger
+        self.connection_string = connection_string
 
         self.engine = create_engine(self.connection_string)
         Base.metadata.create_all(self.engine)

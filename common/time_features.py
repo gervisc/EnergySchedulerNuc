@@ -4,6 +4,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import pytz
 
+DEFAULT_LOCAL_TZ_NAME = "Europe/Amsterdam"
+DEFAULT_LONGITUDE = 4.70
+DEFAULT_LATITUDE = 52.01
+
 FEAT_ORDER = [
     "Sun_Angle",
     "Sun_Angle_Trend",
@@ -16,8 +20,8 @@ FEAT_ORDER = [
 
 def calculate_sun_angle(
     timestamp: datetime.datetime,
-    longitude: float = 4.70,
-    latitude: float = 52.01,
+    longitude: float,
+    latitude: float,
 ) -> float:
     """Return sun angle (radians), clipped at 0 below horizon."""
     day_of_year = timestamp.timetuple().tm_yday
@@ -48,9 +52,9 @@ def calculate_sun_angle(
 
 def prepare_time_features(
     utc_datetimes: Iterable[datetime.datetime],
-    local_tz_name: str = "Europe/Amsterdam",
-    longitude: float = 4.70,
-    latitude: float = 52.01,
+    local_tz_name: str,
+    longitude: float,
+    latitude: float,
 ) -> List[Dict[str, Any]]:
     """Return per-timestamp features from UTC datetimes.
 

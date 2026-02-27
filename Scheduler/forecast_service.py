@@ -1,7 +1,6 @@
 import datetime
-import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import pandas as pd
 from darts import TimeSeries
@@ -18,10 +17,14 @@ class ForecastService:
     def __init__(
         self,
         repo: DbRepository,
-        local_tz_name: str = "Europe/Amsterdam",
+        local_tz_name: str,
+        longitude: float,
+        latitude: float,
     ) -> None:
         self.repo = repo
         self.local_tz_name = local_tz_name
+        self.longitude = longitude
+        self.latitude = latitude
 
     def load_model(self, model_path: str) -> TiDEModel:
         """Load a saved TiDE model from disk."""
@@ -39,20 +42,14 @@ class ForecastService:
 
     def predict_next_24_hours_consumption(
         self,
-        model: Optional[TiDEModel] = None,
-        horizon: int = 24,
+        model: TiDEModel,
+        horizon: int,
     ) -> TimeSeries:
         """Predict the next 24 hours (default) from historical data.
 
         Uses the preparation service to build the last 48 hours of history
         and time-based covariates for history + horizon.
         """
-        if model is None:
-            model_path = os.environ.get("ENERGYMODEL_TIDE_PATH")
-            if not model_path:
-                raise ValueError("ENERGYMODEL_TIDE_PATH is not set; cannot load forecast model")
-            model = self.load_model(model_path)
-
         history = self.prepare_last_48_hours_consumption()
         if not history:
             raise ValueError("No historical consumption data available for prediction")
@@ -68,6 +65,8 @@ class ForecastService:
         history_feats_df = pd.DataFrame(prepare_time_features(
             df["Timestamp"].tolist(),
             local_tz_name=self.local_tz_name,
+            longitude=self.longitude,
+            latitude=self.latitude,
         ))
         cov_hist_df = df[["Timestamp", "time_idx"]].merge(
             history_feats_df, on="Timestamp", how="left"
@@ -83,6 +82,8 @@ class ForecastService:
         future_feats_df = pd.DataFrame(prepare_time_features(
             future_ts,
             local_tz_name=self.local_tz_name,
+            longitude=self.longitude,
+            latitude=self.latitude,
         ))
         future_feats_df["time_idx"] = [
             last_time_idx + i for i in range(1, horizon + 1)
@@ -131,16 +132,10 @@ class ForecastService:
 
     def predict_next_24_hours_solar(
         self,
-        model: Optional[LinearRegressionModel] = None,
-        horizon: int = 24,
+        model: LinearRegressionModel,
+        horizon: int,
     ) -> TimeSeries:
         """Predict the next 24 hours of solar yield using weather + time features."""
-        if model is None:
-            model_path = os.environ.get("ENERGYMODEL_SOLAR_PATH")
-            if not model_path:
-                raise ValueError("ENERGYMODEL_SOLAR_PATH is not set; cannot load solar model")
-            model = self.load_solar_model(model_path)
-
         weather_rows = self.repo.get_current_and_next_24_hours_weather()
         if not weather_rows:
             raise ValueError("No weather data available for solar prediction")
@@ -162,6 +157,8 @@ class ForecastService:
         time_feats_df = pd.DataFrame(prepare_time_features(
             df["Timestamp"].tolist(),
             local_tz_name=self.local_tz_name,
+            longitude=self.longitude,
+            latitude=self.latitude,
         ))
         df = df.merge(time_feats_df, on="Timestamp", how="left")
 

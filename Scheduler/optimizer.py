@@ -69,8 +69,8 @@ def expand_inputs_to_steps(
 
 def build_battery_milp(
     inputs: OptimizationInputs,
-    now_utc: datetime.datetime | None = None,
-    step_minutes: int = 60,
+    now_utc: datetime.datetime,
+    step_minutes: int,
 ) -> pyo.ConcreteModel:
     """Build a simple MILP for battery charging decisions.
 
@@ -79,9 +79,6 @@ def build_battery_milp(
     horizon = min(len(inputs.consumption_kwh), len(inputs.solar_kwh), len(inputs.price_per_kwh))
     if horizon <= 0:
         raise ValueError("No horizon available for optimization")
-
-    if now_utc is None:
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
 
     dt_hours = _step_fractions(now_utc, horizon, step_minutes)
 

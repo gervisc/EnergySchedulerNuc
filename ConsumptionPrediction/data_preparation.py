@@ -6,12 +6,24 @@ from darts import TimeSeries
 from darts.dataprocessing.transformers import Scaler
 
 try:
-    from common.time_features import FEAT_ORDER, prepare_time_features
+    from common.time_features import (
+        DEFAULT_LATITUDE,
+        DEFAULT_LOCAL_TZ_NAME,
+        DEFAULT_LONGITUDE,
+        FEAT_ORDER,
+        prepare_time_features,
+    )
 except ModuleNotFoundError:
     project_root = os.path.dirname(os.path.dirname(__file__))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from common.time_features import FEAT_ORDER, prepare_time_features
+    from common.time_features import (
+        DEFAULT_LATITUDE,
+        DEFAULT_LOCAL_TZ_NAME,
+        DEFAULT_LONGITUDE,
+        FEAT_ORDER,
+        prepare_time_features,
+    )
 
 def pepare_data(df):
     df = df.copy()
@@ -23,7 +35,9 @@ def pepare_data(df):
 
     time_features = prepare_time_features(
         df["Timestamp"].tolist(),
-        local_tz_name="Europe/Amsterdam",
+        local_tz_name=DEFAULT_LOCAL_TZ_NAME,
+        longitude=DEFAULT_LONGITUDE,
+        latitude=DEFAULT_LATITUDE,
     )
 
   

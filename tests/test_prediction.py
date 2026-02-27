@@ -1,10 +1,12 @@
+import logging
 import os
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from common.db_repository import DbRepository
+from common.db_repository import DEFAULT_DB_ENV_VARS, DbRepository, get_db_connection_string
+from common.time_features import DEFAULT_LATITUDE, DEFAULT_LOCAL_TZ_NAME, DEFAULT_LONGITUDE
 from Scheduler.forecast_service import ForecastService
 
 
@@ -34,10 +36,17 @@ def test_predict_next_24_hours_consumption_smoke():
     if not callable(getattr(TiDEModel, "load", None)):
         pytest.skip("TiDEModel is unavailable; install Darts with required extras")
 
-    repo = DbRepository()
+    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+    repo = DbRepository(connection_string=connection_string, logger=logging.getLogger(__name__))
     try:
-        forecast_service = ForecastService(repo)
-        prediction = forecast_service.predict_next_24_hours_consumption()
+        forecast_service = ForecastService(
+            repo,
+            local_tz_name=DEFAULT_LOCAL_TZ_NAME,
+            longitude=DEFAULT_LONGITUDE,
+            latitude=DEFAULT_LATITUDE,
+        )
+        model = forecast_service.load_model(model_path)
+        prediction = forecast_service.predict_next_24_hours_consumption(model=model, horizon=24)
         df = prediction.to_dataframe()
         print(df.head(24))
 
@@ -83,13 +92,20 @@ def test_predict_next_24_hours_solar_smoke():
     if not callable(getattr(LinearRegressionModel, "load", None)):
         pytest.skip("LinearRegressionModel is unavailable; install Darts with required extras")
 
-    repo = DbRepository()
+    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+    repo = DbRepository(connection_string=connection_string, logger=logging.getLogger(__name__))
     try:
         if not repo.get_current_and_next_24_hours_weather():
             pytest.skip("No weather data available for the next 24 hours")
 
-        forecast_service = ForecastService(repo)
-        prediction = forecast_service.predict_next_24_hours_solar()
+        forecast_service = ForecastService(
+            repo,
+            local_tz_name=DEFAULT_LOCAL_TZ_NAME,
+            longitude=DEFAULT_LONGITUDE,
+            latitude=DEFAULT_LATITUDE,
+        )
+        model = forecast_service.load_solar_model(str(path))
+        prediction = forecast_service.predict_next_24_hours_solar(model=model, horizon=24)
         df = prediction.to_dataframe()
         print(df.head(24))
 

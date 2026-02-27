@@ -3,11 +3,11 @@ from typing import Sequence, Tuple
 
 import pandas as pd
 
-from common.time_features import prepare_time_features
+from common.time_features import DEFAULT_LATITUDE, DEFAULT_LONGITUDE, prepare_time_features
 
 
 class PredictHelper:
-    def __init__(self, local_tz_name: str = "Europe/Amsterdam") -> None:
+    def __init__(self, local_tz_name: str) -> None:
         self.local_tz_name = local_tz_name
 
     def build_feature_dataframe(
@@ -43,6 +43,8 @@ class PredictHelper:
         time_df = pd.DataFrame(prepare_time_features(
             df["Timestamp"].tolist(),
             local_tz_name=self.local_tz_name,
+            longitude=DEFAULT_LONGITUDE,
+            latitude=DEFAULT_LATITUDE,
         ))
 
         return df.merge(time_df, on="Timestamp", how="left")

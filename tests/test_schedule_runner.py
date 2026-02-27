@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from Scheduler.schedule_runner import run_optimization, run_optimization_and_store
+import datetime
+
+from Scheduler.schedule_runner import (
+    DEFAULT_HORIZON_HOURS,
+    DEFAULT_STEP_MINUTES,
+    run_optimization,
+    run_optimization_and_store,
+)
 
 
 def _load_env_local() -> None:
@@ -34,7 +41,12 @@ def test_run_optimization_smoke():
     if not db_conn:
         pytest.skip("ENERGYDB/energydb must be set for this test")
 
-    model, results, inputs = run_optimization(time_limit_sec=5)
+    model, results, inputs = run_optimization(
+        horizon=DEFAULT_HORIZON_HOURS,
+        time_limit_sec=5,
+        step_minutes=DEFAULT_STEP_MINUTES,
+        now_utc=datetime.datetime.now(datetime.timezone.utc),
+    )
 
     assert model is not None
     assert inputs is not None
@@ -84,4 +96,8 @@ def test_run_optimization_and_store_smoke():
         pytest.skip("ENERGYDB/energydb must be set for this test")
 
     # Smoke test: should run without raising.
-    run_optimization_and_store(time_limit_sec=5)
+    run_optimization_and_store(
+        horizon=DEFAULT_HORIZON_HOURS,
+        time_limit_sec=5,
+        step_minutes=DEFAULT_STEP_MINUTES,
+    )
