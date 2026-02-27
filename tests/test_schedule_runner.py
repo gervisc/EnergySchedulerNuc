@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -5,7 +6,9 @@ import pytest
 
 import datetime
 
+from common.db_repository import DEFAULT_DB_ENV_VARS, DbRepository, get_db_connection_string
 from Scheduler.schedule_runner import (
+    DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_HORIZON_HOURS,
     DEFAULT_STEP_MINUTES,
     run_optimization,
@@ -101,3 +104,22 @@ def test_run_optimization_and_store_smoke():
         time_limit_sec=5,
         step_minutes=DEFAULT_STEP_MINUTES,
     )
+
+
+def test_print_current_soc():
+    _load_env_local()
+
+    db_conn = os.environ.get("energydb") or os.environ.get("ENERGYDB")
+    if not db_conn:
+        pytest.skip("ENERGYDB/energydb must be set for this test")
+
+    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+    with DbRepository(connection_string=connection_string, logger=logging.getLogger(__name__)) as repo:
+        row = repo.get_current_battery_state()
+        if not row:
+            raise ValueError("No current battery state found")
+        _, soc_value = row
+        soc_kwh = (float(soc_value) / 100.0) * DEFAULT_BATTERY_CAPACITY_KWH
+
+    print("current_soc_kwh", soc_kwh)
+    assert isinstance(soc_kwh, float)

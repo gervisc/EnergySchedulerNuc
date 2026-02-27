@@ -20,12 +20,6 @@ DEFAULT_HORIZON_HOURS = 24
 DEFAULT_STEP_MINUTES = 15
 DEFAULT_TIME_LIMIT_SEC: Optional[int] = None
 DEFAULT_BATTERY_CAPACITY_KWH = float(os.environ.get("BATTERY_CAPACITY_KWH", "1.6"))
-DEFAULT_SOC_IS_PERCENT = os.environ.get("SOC_IS_PERCENT", "true").lower() in {
-    "1",
-    "true",
-    "yes",
-    "y",
-}
 ENERGYMODEL_TIDE_ENV = "ENERGYMODEL_TIDE_PATH"
 ENERGYMODEL_SOLAR_ENV = "ENERGYMODEL_SOLAR_PATH"
 # Create a formatter for the log messages
@@ -50,26 +44,10 @@ def _series_to_list(series, horizon: Optional[int]) -> list[float]:
     return values
 
 
-def _get_current_soc_kwh(
-    repo: DbRepository,
-    battery_capacity_kwh: float,
-    soc_is_percent: bool,
-) -> float:
-    row = repo.get_current_battery_state()
-    if not row:
-        return 0.0
-    _, soc_value = row
-    if soc_is_percent:
-        return (float(soc_value) / 100.0) * battery_capacity_kwh
-    return float(soc_value)
-
-
 def build_inputs_from_db(
     repo: DbRepository,
     forecast_service: ForecastService,
     horizon: int,
-    battery_capacity_kwh: float,
-    soc_is_percent: bool,
     consumption_model: TiDEModel,
     solar_model: LinearRegressionModel,
 ) -> OptimizationInputs:
@@ -90,7 +68,11 @@ def build_inputs_from_db(
 
     expected_sell = repo.get_expected_discharge_sell_price() or 0.0
 
-    current_soc_kwh = _get_current_soc_kwh(repo, battery_capacity_kwh, soc_is_percent)
+    row = repo.get_current_battery_state()
+    if not row:
+        raise ValueError("No current battery state found")
+    _, soc_value = row
+    current_soc_kwh = (float(soc_value) / 100.0) * DEFAULT_BATTERY_CAPACITY_KWH
 
     horizon = min(len(consumption_kwh), len(solar_kwh), len(price_per_kwh))
     if horizon <= 0:
@@ -132,8 +114,6 @@ def run_optimization(
             repo,
             forecast_service,
             horizon=horizon,
-            battery_capacity_kwh=DEFAULT_BATTERY_CAPACITY_KWH,
-            soc_is_percent=DEFAULT_SOC_IS_PERCENT,
             consumption_model=tide_model,
             solar_model=solar_model,
         )
