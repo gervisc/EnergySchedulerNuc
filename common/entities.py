@@ -19,15 +19,15 @@ class WeatherRecord(Base):
 class AnkerData(Base):
     __tablename__ = 'AnkerData'
     Timestamp = Column(DateTime, primary_key=True, nullable=False)
-    grid_to_battery_total = Column(Float, nullable=True)
-    solar_to_battery_total = Column(Float, nullable=True)
-    solar_to_grid_total = Column(Float, nullable=True)
-    solar_to_home_total = Column(Float, nullable=True)
-    battery_to_home_total = Column(Float, nullable=True)
-    grid_to_home_total = Column(Float, nullable=True)
     battery_health = Column(Float, nullable=True)
     battery_diff = Column(Float, nullable=True)
-    battery_discharge_total = Column(Float, nullable=True)
+    grid_export = Column(Float, nullable=True)
+    grid_import = Column(Float, nullable=True)
+    home_consumption = Column(Float, nullable=True)
+    discharge = Column(Float, nullable=True)
+    grid_charge = Column(Float, nullable=True)
+    solar_total = Column(Float, nullable=True)
+    solar_charge = Column(Float, nullable=True)
 
 class DailyCounter(Base):
     __tablename__ = 'hm_daily_counter'

@@ -116,7 +116,7 @@ class DbRepository:
         ).label("hour")
 
         solar_total = func.sum(
-            func.coalesce(AnkerDataOld.solar_to_battery_total, 0)
+            func.coalesce(AnkerDataOld.solar_charge, 0)
             + func.coalesce(AnkerDataOld.solar_to_grid_total, 0)
             + func.coalesce(AnkerDataOld.solar_to_home_total, 0)
         ).label("solar_total")
@@ -337,15 +337,15 @@ class DbRepository:
         start = end - datetime.timedelta(days=7)
 
         discharge_hour = func.from_unixtime(
-            func.floor(func.unix_timestamp(AnkerDataOld.Timestamp) / 3600) * 3600
+            func.floor(func.unix_timestamp(AnkerData.Timestamp) / 3600) * 3600
         ).label("hour")
 
         discharge_subq = (
             self.session.query(
                 discharge_hour,
-                func.sum(func.coalesce(AnkerDataOld.battery_discharge_total, 0)).label("discharge_kwh"),
+                func.sum(func.coalesce(AnkerData.discharge, 0)).label("discharge_kwh"),
             )
-            .filter(AnkerDataOld.Timestamp >= start)
+            .filter(AnkerData.Timestamp >= start)
             .group_by(discharge_hour)
             .subquery()
         )

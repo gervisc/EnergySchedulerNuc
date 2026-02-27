@@ -127,3 +127,21 @@ def test_print_current_soc():
 
     print("current_soc_kwh", soc_kwh)
     assert isinstance(soc_kwh, float)
+
+
+def test_get_expected_discharge_sell_price():
+    _load_env_local()
+
+    db_conn = os.environ.get("energydb") or os.environ.get("ENERGYDB")
+    if not db_conn:
+        pytest.skip("ENERGYDB/energydb must be set for this test")
+
+    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+    with DbRepository(connection_string=connection_string, logger=logging.getLogger(__name__)) as repo:
+        try:
+            price = repo.get_expected_discharge_sell_price()
+        except Exception as exc:
+            print("get_expected_discharge_sell_price failed with:", repr(exc))
+            raise
+
+    print("expected_discharge_sell_price", price)
