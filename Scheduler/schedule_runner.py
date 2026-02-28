@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 SOLVER_NAME = "glpk"
 DEFAULT_HORIZON_HOURS = 24
 DEFAULT_STEP_MINUTES = 15
-DEFAULT_TIME_LIMIT_SEC: Optional[int] = None
+DEFAULT_TIME_LIMIT_SEC: int = 30
 DEFAULT_BATTERY_CAPACITY_KWH = float(os.environ.get("BATTERY_CAPACITY_KWH", "1.6"))
 ENERGYMODEL_TIDE_ENV = "ENERGYMODEL_TIDE_PATH"
 ENERGYMODEL_SOLAR_ENV = "ENERGYMODEL_SOLAR_PATH"
@@ -89,7 +89,7 @@ def build_inputs_from_db(
 
 def run_optimization(
     horizon: int,
-    time_limit_sec: Optional[int],
+    time_limit_sec: int,
     step_minutes: int,
     now_utc: datetime.datetime,
 ) -> Tuple[pyo.ConcreteModel, Optional[SolverResults], OptimizationInputs]:
@@ -133,7 +133,7 @@ def run_optimization(
 
 def run_optimization_and_store(
     horizon: int,
-    time_limit_sec: Optional[int],
+    time_limit_sec: int,
     step_minutes: int,
 ) -> None:
     usage_mode = "use_time"
