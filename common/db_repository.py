@@ -301,17 +301,12 @@ class DbRepository:
         ],
     ) -> None:
         """Upsert scheduler rows and delete entries older than 48 hours (UTC)."""
-        for (
-            timestamp,
-            charge_on,
-            solar_charge_on,
-            discharge_on,
-            solar,
-            consumption,
-            grid,
-            battery,
-        ) in rows:
-            self.session.merge(
+        if rows:
+            min_ts = min(row[0] for row in rows)
+            self.session.query(Scheduler).filter(Scheduler.timestamp >= min_ts).delete(
+                synchronize_session=False
+            )
+            objects = [
                 Scheduler(
                     timestamp=timestamp,
                     charge_on=charge_on,
@@ -322,7 +317,18 @@ class DbRepository:
                     grid=grid,
                     battery=battery,
                 )
-            )
+                for (
+                    timestamp,
+                    charge_on,
+                    solar_charge_on,
+                    discharge_on,
+                    solar,
+                    consumption,
+                    grid,
+                    battery,
+                ) in rows
+            ]
+            self.session.add_all(objects)
 
         cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)
         self.session.query(Scheduler).filter(Scheduler.timestamp < cutoff).delete(

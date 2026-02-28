@@ -1,4 +1,5 @@
 import datetime
+import math
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -13,49 +14,44 @@ class OptimizationInputs:
     current_soc_kwh: float
 
 
-def _step_fractions(
-    now_utc: datetime.datetime,
-    horizon: int,
-    step_minutes: int,
-) -> list[float]:
-    """Return length (in hours) for each optimization step.
-
-    The first step is shortened to the remaining fraction of the current step.
-    """
+def _remaining_steps_in_hour(now_utc: datetime.datetime, step_minutes: int) -> int:
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
     else:
         now_utc = now_utc.astimezone(datetime.timezone.utc)
-
-    if step_minutes <= 0 or 60 % step_minutes != 0:
-        raise ValueError("step_minutes must be a positive divisor of 60")
 
     minutes = (
         now_utc.minute
         + now_utc.second / 60.0
         + now_utc.microsecond / 3_600_000_000.0
     )
+    steps_per_hour = 60 // step_minutes
     remainder = minutes % step_minutes
-    step_hours = step_minutes / 60.0
-    first = max((step_minutes - remainder) / 60.0, 1e-6)
-    return [first] + [step_hours] * (horizon - 1)
+    if remainder < 1e-9:
+        steps_elapsed = int(minutes // step_minutes)
+    else:
+        steps_elapsed = int(math.ceil(minutes / step_minutes))
+    return max(steps_per_hour - steps_elapsed, 0)
 
 
 def expand_inputs_to_steps(
     inputs: OptimizationInputs,
     step_minutes: int,
+    now_utc: datetime.datetime,
 ) -> OptimizationInputs:
     if step_minutes <= 0 or 60 % step_minutes != 0:
         raise ValueError("step_minutes must be a positive divisor of 60")
 
     steps_per_hour = 60 // step_minutes
-    if steps_per_hour == 1:
-        return inputs
+    first_steps = _remaining_steps_in_hour(now_utc, step_minutes)
 
     def _expand(values: Sequence[float]) -> list[float]:
         expanded: list[float] = []
-        for value in values:
-            expanded.extend([float(value)] * steps_per_hour)
+        for idx, value in enumerate(values):
+            repeats = first_steps if idx == 0 else steps_per_hour
+            if repeats <= 0:
+                continue
+            expanded.extend([float(value)] * repeats)
         return expanded
 
     return OptimizationInputs(
@@ -69,7 +65,6 @@ def expand_inputs_to_steps(
 
 def build_battery_milp(
     inputs: OptimizationInputs,
-    now_utc: datetime.datetime,
     step_minutes: int,
 ) -> pyo.ConcreteModel:
     """Build a simple MILP for battery charging decisions.
@@ -80,7 +75,7 @@ def build_battery_milp(
     if horizon <= 0:
         raise ValueError("No horizon available for optimization")
 
-    dt_hours = _step_fractions(now_utc, horizon, step_minutes)
+    dt_hours = [step_minutes / 60.0] * horizon
 
     m = pyo.ConcreteModel(name="battery_schedule")
     m.T = pyo.RangeSet(0, horizon - 1)

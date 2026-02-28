@@ -117,8 +117,8 @@ def run_optimization(
             consumption_model=tide_model,
             solar_model=solar_model,
         )
-        inputs = expand_inputs_to_steps(inputs, step_minutes)
-        model = build_battery_milp(inputs, now_utc=now_utc, step_minutes=step_minutes)
+        inputs = expand_inputs_to_steps(inputs, step_minutes, now_utc=now_utc)
+        model = build_battery_milp(inputs, step_minutes=step_minutes)
 
         solver = pyo.SolverFactory(SOLVER_NAME)
         if solver is None or not solver.available():
@@ -155,12 +155,19 @@ def run_optimization_and_store(
             len(inputs.solar_kwh),
             len(inputs.price_per_kwh),
         )
-        start = now_utc.replace(second=0, microsecond=0)
-        if step_minutes == 60:
-            start = start.replace(minute=0)
+        step_seconds = step_minutes * 60
+        seconds_in_hour = (
+            now_utc.minute * 60
+            + now_utc.second
+            + now_utc.microsecond / 1_000_000.0
+        )
+        remainder = seconds_in_hour % step_seconds
+        if remainder < 1e-9:
+            start = now_utc.replace(second=0, microsecond=0)
         else:
-            minute = (start.minute // step_minutes) * step_minutes
-            start = start.replace(minute=minute)
+            delta = step_seconds - remainder
+            start = now_utc + datetime.timedelta(seconds=delta)
+            start = start.replace(second=0, microsecond=0)
         timestamps = [
             start + datetime.timedelta(minutes=step_minutes * i)
             for i in range(horizon_len)
