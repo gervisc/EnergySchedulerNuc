@@ -92,6 +92,7 @@ def build_battery_milp(
     charge_efficiency = 0.8
     discharge_rate =0.400
     charge_rate = 0.400
+    solar_charge_efficiency = 0.85
     battery_capcity_kwh = 1.6
     minimum_level = 0.2 * battery_capcity_kwh
 
@@ -101,7 +102,7 @@ def build_battery_milp(
             prev_energy = (inputs.current_soc_kwh if t==0 else m.soc_kwh[t - 1])
             return (
                 m.soc_kwh[t] ==  prev_energy + 
-                m.solar_charge_on[t] * inputs.solar_kwh[t] * dt_hours[t] 
+                m.solar_charge_on[t] * inputs.solar_kwh[t] * dt_hours[t] * solar_charge_efficiency
                 - m.discharge_on[t] * discharge_rate / charge_efficiency * dt_hours[t]
                 + m.charge_on[t] * charge_rate * charge_efficiency * dt_hours[t]                   
                 -battery_loss* dt_hours[t]

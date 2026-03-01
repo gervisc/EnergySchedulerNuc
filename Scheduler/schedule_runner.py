@@ -213,6 +213,9 @@ def run_optimization_and_store(
         elif soc_kwh < 1.6 * 0.8:
             usage_mode = "use_time"
             tariff_group = "off_peak"
+        elif float(inputs.solar_kwh[first_idx]) > 1.6-soc_kwh:
+            usage_mode = "manual"
+            preset = 0.0
         else:
             usage_mode = "manual"
             preset = float(inputs.solar_kwh[first_idx]) * 1000.0
