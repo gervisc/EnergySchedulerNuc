@@ -41,6 +41,11 @@ class AnkerRepository:
 
     def get_current_metrics(self, timestep_minutes: int) -> "AnkerMetrics":
         """Return current SOC and diffs for today's energy counters."""
+        now_local = datetime.now().astimezone()
+        midnight_reset_window = (
+            now_local.hour == 0 and now_local.minute <= int(timestep_minutes)
+        )
+
         previous_state = self._load_state()
         if previous_state:
             timestamp = previous_state.get("timestamp")
@@ -54,7 +59,7 @@ class AnkerRepository:
                     if saved_ts.tzinfo is None:
                         saved_ts = saved_ts.replace(tzinfo=now_local.tzinfo)
                     age = now_local - saved_ts.astimezone(now_local.tzinfo)
-                    if age < timedelta(minutes=timestep_minutes * 0.5):
+                    if age < timedelta(minutes=timestep_minutes * 0.5) and not midnight_reset_window:
                         raise ValueError(
                             "No previous Anker metrics state found; cannot calculate diffs yet."
                         )
@@ -129,14 +134,35 @@ class AnkerRepository:
             }
 
             diffs = {key: None for key in current_values}
-            if previous_state and isinstance(previous_state.get("values"), dict):
+            if midnight_reset_window:
+                diffs = {key: 0.0 for key in current_values}
+            elif previous_state and isinstance(previous_state.get("values"), dict):
+                timestamp = previous_state.get("timestamp")
                 previous_values = previous_state.get("values") or {}
-                for key, value in current_values.items():
-                    prev = previous_values.get(key)
-                    if prev is None:
-                        diffs[key] = None
+                saved_ts = None
+                if timestamp:
+                    try:
+                        saved_ts = datetime.fromisoformat(str(timestamp))
+                    except ValueError:
+                        saved_ts = None
+
+                if saved_ts is None:
+                    diffs = {key: None for key in current_values}
+                else:
+                    if saved_ts.tzinfo is None:
+                        saved_ts = saved_ts.replace(tzinfo=now_local.tzinfo)
+                    saved_local = saved_ts.astimezone(now_local.tzinfo)
+                    too_old = (now_local - saved_local) > timedelta(minutes=timestep_minutes * 2)
+                    wrong_day = (saved_local.date() != now_local.date()) and (not midnight_reset_window)
+                    if too_old or wrong_day:
+                        diffs = {key: None for key in current_values}
                     else:
-                        diffs[key] = float(value) - float(prev)
+                        for key, value in current_values.items():
+                            prev = previous_values.get(key)
+                            if prev is None:
+                                diffs[key] = None
+                            else:
+                                diffs[key] = float(value) - float(prev)
 
             metrics = AnkerMetrics(
                 current_soc=current_soc,
