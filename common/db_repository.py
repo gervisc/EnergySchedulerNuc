@@ -3,23 +3,25 @@ import logging
 import os
 import re
 import unicodedata
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, TYPE_CHECKING
 
 from sqlalchemy import and_, create_engine, func, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from common.entities import Base, WeatherRecord, AnkerData, AnkerDataOld, DailyCounter, EnergyPrice, CurrentState, Scheduler
+from common.entities import Base, WeatherRecord, AnkerData, AnkerDataOld,  EnergyPrice, Scheduler
 from common.constants import CONSUMPTION_FACTOR
 
-DEFAULT_DB_ENV_VARS = ("energydb", "ENERGYDB")
+if TYPE_CHECKING:
+    from common.anker_repository import AnkerDailyCounters
+
+DEFAULT_DB_ENV_VAR = "energydb"
 
 
-def get_db_connection_string(env_vars: Tuple[str, ...]) -> str:
-    for env_var in env_vars:
-        value = os.environ.get(env_var)
-        if value:
-            return value
-    raise ValueError("Database connection string is not configured (env ENERGYDB missing)")
+def get_db_connection_string(env_var: str) -> str:
+    value = os.environ.get(env_var)
+    if value:
+        return value
+    raise ValueError(f"Database connection string is not configured (env {env_var} missing)")
 
 
 class DbRepository:
@@ -54,30 +56,24 @@ class DbRepository:
     def get_last_48_complete_hours_consumption(self):
         """Return hourly power consumption for the last 48 complete hours.
 
-        Consumption = solar_to_home_total + grid_to_home_total + battery_to_home_total.
+        Consumption is read from AnkerData.home_consumption.
         """
-       
         now = datetime.datetime.now(datetime.timezone.utc)
 
         end = now.replace(minute=0, second=0, microsecond=0)
         start = end - datetime.timedelta(hours=48)
 
-        entity_ids = [
-            "sensor.system_pad3400_daily_home_usage",
-     ]
-
         hour_bucket = func.from_unixtime(
-            func.floor(func.unix_timestamp(DailyCounter.bucket_ts) / 3600) * 3600
+            func.floor(func.unix_timestamp(AnkerData.Timestamp) / 3600) * 3600
         )
         query = (
             self.session.query(
                 hour_bucket.label("hour"),
-                func.sum(func.coalesce(DailyCounter.delta, 0)).label("consumption"),
+                func.sum(func.coalesce(AnkerData.home_consumption, 0)).label("consumption"),
             )
             .filter(
-                DailyCounter.bucket_ts >= start,
-                DailyCounter.bucket_ts < end,
-                DailyCounter.entity_id.in_(entity_ids),
+                AnkerData.Timestamp >= start,
+                AnkerData.Timestamp < end,
             )
             .group_by(hour_bucket)
             .order_by(hour_bucket)
@@ -85,18 +81,16 @@ class DbRepository:
 
         try:
             self.logger.info(
-                "Running consumption query (start=%s, end=%s, entity_ids=%s)",
+                "Running AnkerData consumption query (start=%s, end=%s)",
                 start,
                 end,
-                entity_ids,
             )
             rows = query.all()
         except Exception:
             self.logger.exception(
-                "Failed to load last 48 hours consumption (start=%s, end=%s, entity_ids=%s)",
+                "Failed to load last 48 hours AnkerData consumption (start=%s, end=%s)",
                 start,
                 end,
-                entity_ids,
             )
             raise
         return [(hour.replace(tzinfo=datetime.timezone.utc), consumption) for hour, consumption in rows]
@@ -273,11 +267,11 @@ class DbRepository:
         return future
 
     def get_current_battery_state(self):
-        """Return the latest battery state of charge from hm_current_state (UTC)."""
+        """Return the latest battery state of charge from AnkerData (UTC)."""
         row = (
-            self.session.query(CurrentState.last_updated, CurrentState.value)
-            .filter(CurrentState.name == "sensor.solarbank_2_e1600_ac_state_of_charge")
-            .order_by(CurrentState.last_updated.desc())
+            self.session.query(AnkerData.Timestamp, AnkerData.battery_health)
+            .filter(AnkerData.battery_health.isnot(None))
+            .order_by(AnkerData.Timestamp.desc())
             .first()
         )
         if not row:
@@ -376,4 +370,31 @@ class DbRepository:
             )
             return float(avg_price) if avg_price is not None else None
         return float(weighted_sum / total_discharge)
+
+    def upsert_anker_daily_counters(
+        self,
+        timestamp: datetime.datetime,
+        counters: "AnkerDailyCounters",
+    ) -> None:
+        """Upsert one Anker row for a given timestamp in AnkerData."""
+
+        row = self.session.get(AnkerData, timestamp)
+        if row is None:
+            row = AnkerData(Timestamp=timestamp)
+            self.session.add(row)
+
+        row.battery_diff = counters.state_of_charge
+        if counters.current_soc is not None and counters.state_of_charge is not None:
+            row.battery_health = float(counters.current_soc) - float(counters.state_of_charge)
+        else:
+            row.battery_health = None
+        row.grid_export = counters.grid_export
+        row.grid_import = counters.grid_home
+        row.home_consumption = counters.home_consumption
+        row.discharge = counters.discharge
+        row.grid_charge = counters.grid_charge
+        row.solar_total = counters.solar_yield
+        row.solar_charge = counters.solar_charge
+
+        self.session.commit()
         

@@ -7,10 +7,10 @@ from typing import Optional, Tuple
 import pyomo.environ as pyo
 from darts.models import LinearRegressionModel, TiDEModel
 
-from common.db_repository import DbRepository, DEFAULT_DB_ENV_VARS, get_db_connection_string
+from common.anker_repository import AnkerRepository
+from common.db_repository import DbRepository, DEFAULT_DB_ENV_VAR, get_db_connection_string
 from common.time_features import DEFAULT_LATITUDE, DEFAULT_LOCAL_TZ_NAME, DEFAULT_LONGITUDE
 from Scheduler.forecast_service import ForecastService
-from Scheduler.homeassistant import update_battery_actions
 from Scheduler.optimizer import OptimizationInputs, build_battery_milp, expand_inputs_to_steps
 from pyomo.opt.results import SolverResults
 
@@ -22,6 +22,7 @@ DEFAULT_TIME_LIMIT_SEC: int = 30
 DEFAULT_BATTERY_CAPACITY_KWH = float(os.environ.get("BATTERY_CAPACITY_KWH", "1.6"))
 ENERGYMODEL_TIDE_ENV = "ENERGYMODEL_TIDE_PATH"
 ENERGYMODEL_SOLAR_ENV = "ENERGYMODEL_SOLAR_PATH"
+ANKER_ENV_VARS = ("ANKERUSER", "ANKERPASSWORD", "ANKERCOUNTRY", "SITE_ID", "DEVICE_SN")
 # Create a formatter for the log messages
 LOGGER.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -44,12 +45,46 @@ def _series_to_list(series, horizon: Optional[int]) -> list[float]:
     return values
 
 
+def _store_anker_metrics(
+    repo: DbRepository,
+    anker_repo: AnkerRepository,
+    step_minutes: int,
+    now_utc: datetime.datetime,
+) -> float:
+    metrics = anker_repo.get_current_metrics(timestep_minutes=step_minutes)
+
+    slot_minute = (now_utc.minute // step_minutes) * step_minutes
+    current_slot_start = now_utc.replace(minute=slot_minute, second=0, microsecond=0)
+    previous_slot_start = current_slot_start - datetime.timedelta(minutes=step_minutes)
+    repo.upsert_anker_daily_counters(previous_slot_start, metrics.daily_counters)
+    return float(metrics.current_soc)
+
+
+def create_anker_repository_from_env(logger: logging.Logger) -> AnkerRepository:
+    user = os.environ.get("ANKERUSER")
+    password = os.environ.get("ANKERPASSWORD")
+    country = os.environ.get("ANKERCOUNTRY")
+    site_id = os.environ.get("SITE_ID")
+    device_sn = os.environ.get("DEVICE_SN")
+    if not all([user, password, country, site_id, device_sn]):
+        raise ValueError(f"Missing Anker env vars: {', '.join(ANKER_ENV_VARS)}")
+    return AnkerRepository(
+        user=user,
+        password=password,
+        country=country,
+        site_id=site_id,
+        device_sn=device_sn,
+        logger=logger,
+    )
+
+
 def build_inputs_from_db(
     repo: DbRepository,
     forecast_service: ForecastService,
     horizon: int,
     consumption_model: TiDEModel,
     solar_model: LinearRegressionModel,
+    soc_value: float,
 ) -> OptimizationInputs:
     consumption_ts = forecast_service.predict_next_24_hours_consumption(
         model=consumption_model,
@@ -68,10 +103,6 @@ def build_inputs_from_db(
 
     expected_sell = repo.get_expected_discharge_sell_price() or 0.0
 
-    row = repo.get_current_battery_state()
-    if not row:
-        raise ValueError("No current battery state found")
-    _, soc_value = row
     current_soc_kwh = (float(soc_value) / 100.0) * DEFAULT_BATTERY_CAPACITY_KWH
 
     horizon = min(len(consumption_kwh), len(solar_kwh), len(price_per_kwh))
@@ -92,9 +123,16 @@ def run_optimization(
     time_limit_sec: int,
     step_minutes: int,
     now_utc: datetime.datetime,
+    anker_repo: AnkerRepository,
 ) -> Tuple[pyo.ConcreteModel, Optional[SolverResults], OptimizationInputs]:
-    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VAR)
     with DbRepository(connection_string=connection_string, logger=LOGGER) as repo:
+        soc_value = _store_anker_metrics(
+            repo=repo,
+            anker_repo=anker_repo,
+            step_minutes=step_minutes,
+            now_utc=now_utc,
+        )
         forecast_service = ForecastService(
             repo,
             local_tz_name=DEFAULT_LOCAL_TZ_NAME,
@@ -116,6 +154,7 @@ def run_optimization(
             horizon=horizon,
             consumption_model=tide_model,
             solar_model=solar_model,
+            soc_value=soc_value,
         )
         inputs = expand_inputs_to_steps(inputs, step_minutes, now_utc=now_utc)
         model = build_battery_milp(inputs, step_minutes=step_minutes)
@@ -131,22 +170,18 @@ def run_optimization(
         return model, results, inputs
 
 
-def run_optimization_and_store(
-    horizon: int,
-    time_limit_sec: int,
+def apply_charging_options(
+    model: pyo.ConcreteModel,
+    results: Optional[SolverResults],
+    inputs: OptimizationInputs,
     step_minutes: int,
+    now_utc: datetime.datetime,
+    anker_repo: AnkerRepository,
 ) -> None:
     usage_mode = "use_time"
     tariff_group = "off_peak"
     preset = 0.0
     try:
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        model, results, inputs = run_optimization(
-            horizon=horizon,
-            time_limit_sec=time_limit_sec,
-            step_minutes=step_minutes,
-            now_utc=now_utc,
-        )
         if results is None:
             return
 
@@ -191,7 +226,7 @@ def run_optimization_and_store(
                 )
             )
 
-        connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+        connection_string = get_db_connection_string(DEFAULT_DB_ENV_VAR)
         with DbRepository(connection_string=connection_string, logger=LOGGER) as repo:
             repo.upsert_scheduler_rows(rows)
 
@@ -213,7 +248,7 @@ def run_optimization_and_store(
         elif soc_kwh < 1.6 * 0.8:
             usage_mode = "use_time"
             tariff_group = "off_peak"
-        elif float(inputs.solar_kwh[first_idx]) > 1.6-soc_kwh:
+        elif float(inputs.solar_kwh[first_idx]) > 1.6-soc_kwh or float(inputs.solar_kwh[first_idx]) < 0.05:
             usage_mode = "manual"
             preset = 0.0
         else:
@@ -222,14 +257,14 @@ def run_optimization_and_store(
 
 
     except Exception as e:
-        LOGGER.exception("Failed to run optimization and store results: %s", e)
+        LOGGER.exception("Failed to apply charging options: %s", e)
     LOGGER.info(
         "Optimization result: usage_mode=%s tariff_group=%s preset=%.1f",
         usage_mode,
         tariff_group,
         preset,
     )
-    update_battery_actions(preset, tariff_group, usage_mode)
+    anker_repo.update_battery_actions(preset, tariff_group, usage_mode)
 
     return
 
@@ -240,8 +275,20 @@ def run_optimization_and_store(
 
 
 if __name__ == "__main__":
-    run_optimization_and_store(
+    anker_repo = create_anker_repository_from_env(LOGGER)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    model, results, inputs = run_optimization(
         horizon=DEFAULT_HORIZON_HOURS,
         time_limit_sec=DEFAULT_TIME_LIMIT_SEC,
         step_minutes=DEFAULT_STEP_MINUTES,
+        now_utc=now_utc,
+        anker_repo=anker_repo,
+    )
+    apply_charging_options(
+        model=model,
+        results=results,
+        inputs=inputs,
+        step_minutes=DEFAULT_STEP_MINUTES,
+        now_utc=now_utc,
+        anker_repo=anker_repo,
     )

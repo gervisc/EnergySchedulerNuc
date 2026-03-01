@@ -3,6 +3,8 @@ import os
 import logging
 import requests
 
+from common.anker_repository import AnkerRepository
+
 LOGGER = logging.getLogger(__name__)
 
 def _get_ha_config() -> tuple[str, str]:
@@ -47,6 +49,26 @@ def update_battery_actions(
     tarif_group: str,
     usage_mode: str,
 ) -> None:
-    set_input_number("number.solarbank_2_e1600_ac_system_output_preset", float(setpoint))
-    set_input_select("select.solarbank_2_e1600_ac_tariff_tou", str(tarif_group))
-    set_input_select("select.solarbank_2_e1600_ac_usage_mode", str(usage_mode))
+    user = os.getenv("ANKERUSER")
+    password = os.getenv("ANKERPASSWORD")
+    country = os.getenv("ANKERCOUNTRY")
+    site_id = os.getenv("SITE_ID")
+    device_sn = os.getenv("DEVICE_SN")
+    if not all([user, password, country, site_id, device_sn]):
+        raise RuntimeError(
+            "Missing Anker config: set ANKERUSER, ANKERPASSWORD, ANKERCOUNTRY, SITE_ID, DEVICE_SN"
+        )
+
+    repo = AnkerRepository(
+        user=user,
+        password=password,
+        country=country,
+        site_id=site_id,
+        device_sn=device_sn,
+        logger=LOGGER,
+    )
+    repo.update_battery_actions(
+        setpoint=float(setpoint),
+        tariff_group=str(tarif_group),
+        usage_mode=str(usage_mode),
+    )

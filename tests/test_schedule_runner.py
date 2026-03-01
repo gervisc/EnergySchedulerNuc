@@ -6,13 +6,14 @@ import pytest
 
 import datetime
 
-from common.db_repository import DEFAULT_DB_ENV_VARS, DbRepository, get_db_connection_string
+from common.db_repository import DEFAULT_DB_ENV_VAR, DbRepository, get_db_connection_string
 from Scheduler.schedule_runner import (
+    apply_charging_options,
+    create_anker_repository_from_env,
     DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_HORIZON_HOURS,
     DEFAULT_STEP_MINUTES,
     run_optimization,
-    run_optimization_and_store,
 )
 
 
@@ -44,11 +45,17 @@ def test_run_optimization_smoke():
     if not db_conn:
         pytest.skip("ENERGYDB/energydb must be set for this test")
 
+    try:
+        anker_repo = create_anker_repository_from_env(logging.getLogger(__name__))
+    except ValueError as exc:
+        pytest.skip(str(exc))
+
     model, results, inputs = run_optimization(
         horizon=DEFAULT_HORIZON_HOURS,
         time_limit_sec=5,
         step_minutes=DEFAULT_STEP_MINUTES,
         now_utc=datetime.datetime.now(datetime.timezone.utc),
+        anker_repo=anker_repo,
     )
 
     assert model is not None
@@ -86,7 +93,7 @@ def test_run_optimization_smoke():
             )
 
 
-def test_run_optimization_and_store_smoke():
+def test_apply_charging_options_smoke():
     _load_env_local()
 
     tide_model_path = os.environ.get("ENERGYMODEL_TIDE_PATH")
@@ -98,15 +105,32 @@ def test_run_optimization_and_store_smoke():
     if not db_conn:
         pytest.skip("ENERGYDB/energydb must be set for this test")
 
+    try:
+        anker_repo = create_anker_repository_from_env(logging.getLogger(__name__))
+    except ValueError as exc:
+        pytest.skip(str(exc))
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    model, results, inputs = run_optimization(
+        horizon=DEFAULT_HORIZON_HOURS,
+        time_limit_sec=5,
+        step_minutes=DEFAULT_STEP_MINUTES,
+        now_utc=now_utc,
+        anker_repo=anker_repo,
+    )
+
     # Smoke test: should run without raising.
     try:
-        run_optimization_and_store(
-            horizon=DEFAULT_HORIZON_HOURS,
-            time_limit_sec=5,
+        apply_charging_options(
+            model=model,
+            results=results,
+            inputs=inputs,
             step_minutes=DEFAULT_STEP_MINUTES,
+            now_utc=now_utc,
+            anker_repo=anker_repo,
         )
     except Exception as exc:
-        print("test_run_optimization_and_store_smoke failed with:", repr(exc))
+        print("test_apply_charging_options_smoke failed with:", repr(exc))
         raise
 
 
@@ -117,7 +141,7 @@ def test_print_current_soc():
     if not db_conn:
         pytest.skip("ENERGYDB/energydb must be set for this test")
 
-    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VAR)
     with DbRepository(connection_string=connection_string, logger=logging.getLogger(__name__)) as repo:
         row = repo.get_current_battery_state()
         if not row:
@@ -136,7 +160,7 @@ def test_get_expected_discharge_sell_price():
     if not db_conn:
         pytest.skip("ENERGYDB/energydb must be set for this test")
 
-    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VARS)
+    connection_string = get_db_connection_string(DEFAULT_DB_ENV_VAR)
     with DbRepository(connection_string=connection_string, logger=logging.getLogger(__name__)) as repo:
         try:
             price = repo.get_expected_discharge_sell_price()
