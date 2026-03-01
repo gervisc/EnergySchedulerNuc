@@ -74,12 +74,13 @@ class AnkerRepository:
             )
             api.authenticate()
             today = datetime.today()
+            target_day = today - timedelta(days=1) if midnight_reset_window else today
 
             solar_data = api.energy_analysis(
                 siteId=self.site_id,
                 deviceSn=self.device_sn,
-                startDay=today,
-                endDay=today,
+                startDay=target_day,
+                endDay=target_day,
                 rangeType="day",
                 devType="solar_production",
             )
@@ -87,16 +88,16 @@ class AnkerRepository:
             home_data = api.energy_analysis(
                 siteId=self.site_id,
                 deviceSn=self.device_sn,
-                startDay=today,
-                endDay=today,
+                startDay=target_day,
+                endDay=target_day,
                 rangeType="day",
                 devType="home_usage",
             )
             grid_data = api.energy_analysis(
                 siteId=self.site_id,
                 deviceSn=self.device_sn,
-                startDay=today,
-                endDay=today,
+                startDay=target_day,
+                endDay=target_day,
                 rangeType="day",
                 devType="grid",
             )
@@ -134,9 +135,7 @@ class AnkerRepository:
             }
 
             diffs = {key: None for key in current_values}
-            if midnight_reset_window:
-                diffs = {key: 0.0 for key in current_values}
-            elif previous_state and isinstance(previous_state.get("values"), dict):
+            if previous_state and isinstance(previous_state.get("values"), dict):
                 timestamp = previous_state.get("timestamp")
                 previous_values = previous_state.get("values") or {}
                 saved_ts = None
@@ -153,8 +152,7 @@ class AnkerRepository:
                         saved_ts = saved_ts.replace(tzinfo=now_local.tzinfo)
                     saved_local = saved_ts.astimezone(now_local.tzinfo)
                     too_old = (now_local - saved_local) > timedelta(minutes=timestep_minutes * 2)
-                    wrong_day = (saved_local.date() != now_local.date()) and (not midnight_reset_window)
-                    if too_old or wrong_day:
+                    if too_old:
                         diffs = {key: None for key in current_values}
                     else:
                         for key, value in current_values.items():
@@ -179,7 +177,10 @@ class AnkerRepository:
                     current_soc=current_soc,
                 ),
             )
-            self._save_state(current_values)
+            if midnight_reset_window:
+                self._save_state({key: 0.0 for key in current_values})
+            else:
+                self._save_state(current_values)
             return metrics
 
     def _state_path(self) -> Path:
