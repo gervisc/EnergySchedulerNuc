@@ -93,6 +93,14 @@ class AnkerRepository:
                 rangeType="day",
                 devType="home_usage",
             )
+            solarbank_data = api.energy_analysis(
+                siteId=self.site_id,
+                deviceSn=self.device_sn,
+                startDay=target_day,
+                endDay=target_day,
+                rangeType="day",
+                devType="solarbank",
+            )
             grid_data = api.energy_analysis(
                 siteId=self.site_id,
                 deviceSn=self.device_sn,
@@ -115,8 +123,8 @@ class AnkerRepository:
             solar_charge = _to_float(solar_data["solar_to_battery_total"])
             solar_yield = _to_float(solar_data["solar_total"])
             solar_grid_charge = _to_float(solar_data["solar_to_grid_total"])
-            grid_charge = _to_float(grid_data["grid_to_battery_total"])
-            discharge = _to_float(home_data["battery_discharging_total"])
+            grid_charge = _to_float(solarbank_data["charge_total"])
+            discharge = _to_float(solarbank_data["discharge_total"])
             grid_export = _to_float(grid_data["solar_to_grid_total"])
             grid_home = _to_float(home_data["grid_to_home_total"])
             home_consumption = _to_float(home_data["home_usage_total"])
@@ -174,6 +182,7 @@ class AnkerRepository:
                     grid_home=diffs.get("grid_home"),
                     home_consumption=diffs.get("home_consumption"),
                     state_of_charge=diffs.get("state_of_charge"),
+                    # current_soc is always the live SOC, never diffed or reset.
                     current_soc=current_soc,
                 ),
             )
