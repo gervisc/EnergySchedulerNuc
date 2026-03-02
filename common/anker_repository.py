@@ -7,7 +7,12 @@ from pathlib import Path
 from requests import Session
 
 from common.anker_api.api import AnkerSolixApi
-from common.anker_api.apitypes import SolarbankUsageMode, SolixTariffTypes
+from common.anker_api.apitypes import (
+    Solarbank2Timeslot,
+    SolarbankUsageMode,
+    SolixDayTypes,
+    SolixTariffTypes,
+)
 
 STATE_FILENAME = "anker_metrics_state.json"
 
@@ -249,23 +254,59 @@ class AnkerRepository:
             usage_value = usage_map[str(usage_mode).lower()]
             tariff_value = tariff_map[str(tariff_group).lower()]
 
-            api.set_sb2_home_load(
-                siteId=self.site_id,
-                deviceSn=self.device_sn,
-                preset=int(setpoint),
-                usage_mode=int(usage_value),
-            )
-
-            if usage_value == SolarbankUsageMode.use_time:
-                api.set_sb2_use_time(
+            if usage_value == SolarbankUsageMode.manual:
+                api.set_sb2_home_load(
                     siteId=self.site_id,
                     deviceSn=self.device_sn,
-                    day_type="all",
-                    start_hour=0,
-                    end_hour=24,
-                    tariff_type=int(tariff_value),
+                    usage_mode=int(usage_value),
+                    set_slot=Solarbank2Timeslot(
+                        start_time=datetime.strptime("00:00", "%H:%M"),
+                        end_time=datetime.strptime("23:59", "%H:%M"),
+                        appliance_load=int(setpoint),
+                        weekdays=set(range(7)),
+                    ),
                 )
-
+                # Re-apply usage mode to ensure manual mode becomes active immediately.
+                api.set_sb2_home_load(
+                    siteId=self.site_id,
+                    deviceSn=self.device_sn,
+                    usage_mode=int(usage_value),
+                )
+            else:
+                if usage_value == SolarbankUsageMode.use_time:
+                    if tariff_value == SolixTariffTypes.VALLEY:
+                        api.set_sb2_use_time(
+                            siteId=self.site_id,
+                            deviceSn=self.device_sn,
+                            start_month=1,
+                            end_month=12,
+                            start_hour=0,
+                            end_hour=24,
+                            day_type=SolixDayTypes.ALL,
+                            tariff_type=int(tariff_value),
+                        )
+                    else:
+                        api.set_sb2_use_time(
+                            siteId=self.site_id,
+                            deviceSn=self.device_sn,
+                            day_type=SolixDayTypes.ALL,
+                            start_hour=0,
+                            end_hour=24,
+                            tariff_type=int(tariff_value),
+                        )
+                    # Re-apply usage mode to ensure use_time becomes active immediately.
+                    api.set_sb2_home_load(
+                        siteId=self.site_id,
+                        deviceSn=self.device_sn,
+                        usage_mode=int(usage_value),
+                    )
+                else:
+                    api.set_sb2_home_load(
+                        siteId=self.site_id,
+                        deviceSn=self.device_sn,
+                        preset=int(setpoint),
+                        usage_mode=int(usage_value),
+                    )
 
 @dataclass(frozen=True)
 class AnkerDailyCounters:
