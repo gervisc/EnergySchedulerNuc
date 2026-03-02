@@ -389,7 +389,7 @@ class DbRepository:
         else:
             row.battery_health = None
         row.grid_export = counters.grid_export
-        row.grid_import = counters.grid_home
+        row.grid_import = counters.grid_import
         row.home_consumption = counters.home_consumption
         row.discharge = counters.discharge
         row.grid_charge = counters.grid_charge

@@ -129,9 +129,9 @@ class AnkerRepository:
             solar_yield = _to_float(solar_data["solar_total"])
             solar_grid_charge = _to_float(solar_data["solar_to_grid_total"])
             grid_charge = _to_float(solarbank_data["charge_total"])
-            discharge = _to_float(solarbank_data["discharge_total"])
+            discharge = _to_float(solarbank_data["battery_discharging_total"])
             grid_export = _to_float(grid_data["solar_to_grid_total"])
-            grid_home = _to_float(home_data["grid_to_home_total"])
+            grid_import = _to_float(home_data["grid_to_home_total"])
             home_consumption = _to_float(home_data["home_usage_total"])
             state_of_charge = current_soc
 
@@ -142,7 +142,7 @@ class AnkerRepository:
                 "grid_charge": grid_charge,
                 "discharge": discharge,
                 "grid_export": grid_export,
-                "grid_home": grid_home,
+                "grid_import": grid_import,
                 "home_consumption": home_consumption,
                 "state_of_charge": state_of_charge,
             }
@@ -184,7 +184,7 @@ class AnkerRepository:
                     grid_charge=diffs.get("grid_charge"),
                     discharge=diffs.get("discharge"),
                     grid_export=diffs.get("grid_export"),
-                    grid_home=diffs.get("grid_home"),
+                    grid_import=diffs.get("grid_import"),
                     home_consumption=diffs.get("home_consumption"),
                     state_of_charge=diffs.get("state_of_charge"),
                     # current_soc is always the live SOC, never diffed or reset.
@@ -205,7 +205,11 @@ class AnkerRepository:
         if not path.exists():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            state = json.loads(path.read_text(encoding="utf-8"))
+            values = state.get("values")
+            if isinstance(values, dict) and "grid_import" not in values and "grid_home" in values:
+                values["grid_import"] = values.pop("grid_home")
+            return state
         except (OSError, json.JSONDecodeError):
             return None
 
@@ -316,7 +320,7 @@ class AnkerDailyCounters:
     grid_charge: float | None
     discharge: float | None
     grid_export: float | None
-    grid_home: float | None
+    grid_import: float | None
     home_consumption: float | None
     state_of_charge: float | None
     current_soc: float | None
