@@ -270,12 +270,6 @@ class AnkerRepository:
                         weekdays=set(range(7)),
                     ),
                 )
-                # Re-apply usage mode to ensure manual mode becomes active immediately.
-                api.set_sb2_home_load(
-                    siteId=self.site_id,
-                    deviceSn=self.device_sn,
-                    usage_mode=int(usage_value),
-                )
             else:
                 if usage_value == SolarbankUsageMode.use_time:
                     if tariff_value == SolixTariffTypes.VALLEY:
