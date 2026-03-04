@@ -8,3 +8,4 @@ __pycache__/
 *.pyo
 common/anker_api/authcache/gvisscher@tutamail.com.json
 common/anker_metrics_state.json
+common/anker_api_context_cache.json

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
 import logging
+import os
 from pathlib import Path
 
 from requests import Session
@@ -15,6 +16,8 @@ from common.anker_api.apitypes import (
 )
 
 STATE_FILENAME = "anker_metrics_state.json"
+API_CONTEXT_CACHE_FILENAME = "anker_api_context_cache.json"
+API_CONTEXT_CACHE_TTL_SECONDS = 86400
 
 
 class AnkerRepository:
@@ -48,9 +51,10 @@ class AnkerRepository:
         """Return current SOC and diffs for today's energy counters."""
         now_local = datetime.now().astimezone()
         midnight_reset_window = (
-            now_local.hour == 0 and now_local.minute <= int(timestep_minutes)
+            now_local.hour == 0 and now_local.minute < timestep_minutes
         )
-
+        saved_ts = None
+        saved_ts_local = None
         previous_state = self._load_state()
         if previous_state:
             timestamp = previous_state.get("timestamp")
@@ -60,11 +64,9 @@ class AnkerRepository:
                 except ValueError:
                     saved_ts = None
                 if saved_ts is not None:
-                    now_local = datetime.now().astimezone()
-                    if saved_ts.tzinfo is None:
-                        saved_ts = saved_ts.replace(tzinfo=now_local.tzinfo)
-                    age = now_local - saved_ts.astimezone(now_local.tzinfo)
-                    if age < timedelta(minutes=timestep_minutes * 0.5) and not midnight_reset_window:
+                    saved_ts_local = saved_ts.replace(tzinfo=now_local.tzinfo).astimezone(now_local.tzinfo)
+                    age = now_local - saved_ts_local
+                    if age < timedelta(minutes=timestep_minutes * 0.5):
                         raise ValueError(
                             "No previous Anker metrics state found; cannot calculate diffs yet."
                         )
@@ -149,22 +151,11 @@ class AnkerRepository:
 
             diffs = {key: None for key in current_values}
             if previous_state and isinstance(previous_state.get("values"), dict):
-                timestamp = previous_state.get("timestamp")
                 previous_values = previous_state.get("values") or {}
-                saved_ts = None
-                if timestamp:
-                    try:
-                        saved_ts = datetime.fromisoformat(str(timestamp))
-                    except ValueError:
-                        saved_ts = None
-
                 if saved_ts is None:
                     diffs = {key: None for key in current_values}
                 else:
-                    if saved_ts.tzinfo is None:
-                        saved_ts = saved_ts.replace(tzinfo=now_local.tzinfo)
-                    saved_local = saved_ts.astimezone(now_local.tzinfo)
-                    too_old = (now_local - saved_local) > timedelta(minutes=timestep_minutes * 2)
+                    too_old = (now_local - saved_ts_local) > timedelta(minutes=timestep_minutes * 2)
                     if too_old:
                         diffs = {key: None for key in current_values}
                     else:
@@ -221,6 +212,69 @@ class AnkerRepository:
         path = self._state_path()
         path.write_text(json.dumps(payload), encoding="utf-8")
 
+    def _api_context_cache_path(self) -> Path:
+        return Path(__file__).with_name(API_CONTEXT_CACHE_FILENAME)
+
+    def _load_api_context_cache(self, max_age_seconds: int) -> dict | None:
+        path = self._api_context_cache_path()
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                return None
+            if payload.get("site_id") != self.site_id or payload.get("device_sn") != self.device_sn:
+                return None
+            timestamp_raw = payload.get("timestamp")
+            if not timestamp_raw:
+                return None
+            timestamp = datetime.fromisoformat(str(timestamp_raw))
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=datetime.now().astimezone().tzinfo)
+            age = datetime.now().astimezone() - timestamp.astimezone()
+            if age.total_seconds() > float(max_age_seconds):
+                return None
+            if not isinstance(payload.get("sites"), dict) or not isinstance(payload.get("devices"), dict):
+                return None
+            return payload
+        except (OSError, ValueError, json.JSONDecodeError, TypeError):
+            return None
+
+    def _save_api_context_cache(self, api: AnkerSolixApi) -> None:
+        payload = {
+            "timestamp": datetime.now().astimezone().isoformat(),
+            "site_id": self.site_id,
+            "device_sn": self.device_sn,
+            "sites": api.sites,
+            "devices": api.devices,
+        }
+        path = self._api_context_cache_path()
+        try:
+            path.write_text(json.dumps(payload, default=str), encoding="utf-8")
+        except (OSError, TypeError):
+            self.logger.debug("Failed to persist API context cache", exc_info=True)
+
+    def _prepare_api_context(self, api: AnkerSolixApi) -> None:
+        max_age_seconds = int(
+            os.environ.get(
+                "ANKER_API_CONTEXT_CACHE_TTL_SECONDS",
+                str(API_CONTEXT_CACHE_TTL_SECONDS),
+            )
+        )
+        cached = self._load_api_context_cache(max_age_seconds=max_age_seconds)
+        if cached:
+            api.sites = cached["sites"]
+            api.devices = cached["devices"]
+
+        options = api.solarbank_usage_mode_options(deviceSn=self.device_sn)
+        if options:
+            return
+
+        api.update_sites(siteId=self.site_id)
+        api.update_site_details()
+        api.update_device_details()
+        self._save_api_context_cache(api)
+
     def update_battery_actions(
         self,
         setpoint: float,
@@ -254,10 +308,8 @@ class AnkerRepository:
                 self.logger,
             )
             api.authenticate()
-            # Warm up cache so usage mode validation has device/site context.
-            api.update_sites(siteId=self.site_id)
-            api.update_site_details()
-            api.update_device_details()
+            # Load device/site context from file cache when possible and refresh only if needed.
+            self._prepare_api_context(api)
 
             usage_value = usage_map[str(usage_mode).lower()]
             tariff_value = tariff_map[str(tariff_group).lower()]
