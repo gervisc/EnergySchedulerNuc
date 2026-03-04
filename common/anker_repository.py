@@ -254,6 +254,10 @@ class AnkerRepository:
                 self.logger,
             )
             api.authenticate()
+            # Warm up cache so usage mode validation has device/site context.
+            api.update_sites(siteId=self.site_id)
+            api.update_site_details()
+            api.update_device_details()
 
             usage_value = usage_map[str(usage_mode).lower()]
             tariff_value = tariff_map[str(tariff_group).lower()]
@@ -269,6 +273,12 @@ class AnkerRepository:
                         appliance_load=int(setpoint),
                         weekdays=set(range(7)),
                     ),
+                )
+                # Re-apply usage mode to ensure manual mode becomes active immediately.
+                api.set_sb2_home_load(
+                    siteId=self.site_id,
+                    deviceSn=self.device_sn,
+                    usage_mode=int(usage_value),
                 )
             else:
                 if usage_value == SolarbankUsageMode.use_time:
