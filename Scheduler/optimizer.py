@@ -27,7 +27,7 @@ def _remaining_steps_in_hour(now_utc: datetime.datetime, step_minutes: int) -> i
     )
     steps_per_hour = 60 // step_minutes
     remainder = minutes % step_minutes
-    if remainder < 1e-9:
+    if remainder < 0.5*step_minutes:
         steps_elapsed = int(minutes // step_minutes)
     else:
         steps_elapsed = int(math.ceil(minutes / step_minutes))

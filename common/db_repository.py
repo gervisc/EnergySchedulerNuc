@@ -110,7 +110,7 @@ class DbRepository:
         ).label("hour")
 
         solar_total = func.sum(
-            func.coalesce(AnkerDataOld.solar_charge, 0)
+            func.coalesce(AnkerDataOld.solar_to_battery_total, 0)
             + func.coalesce(AnkerDataOld.solar_to_grid_total, 0)
             + func.coalesce(AnkerDataOld.solar_to_home_total, 0)
         ).label("solar_total")
