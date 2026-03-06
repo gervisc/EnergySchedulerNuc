@@ -197,7 +197,7 @@ def apply_charging_options(
             + now_utc.microsecond / 1_000_000.0
         )
         remainder = seconds_in_hour % step_seconds
-        if remainder < 1e-9:
+        if remainder < 0.5*step_seconds:
             start = now_utc.replace(second=0, microsecond=0)
         else:
             delta = step_seconds - remainder
