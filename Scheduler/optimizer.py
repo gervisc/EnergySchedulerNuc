@@ -95,7 +95,8 @@ def build_battery_milp(
     solar_charge_efficiency = 0.85
     battery_capcity_kwh = 1.6
     minimum_level = 0.2 * battery_capcity_kwh
-
+    if(inputs.current_soc_kwh < minimum_level):
+        inputs.current_soc_kwh = minimum_level
 
     #battery balance
     def battery_balance_rule(m, t):
