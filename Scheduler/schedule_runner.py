@@ -1,11 +1,11 @@
 import datetime
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 
 import pyomo.environ as pyo
-from darts.models import LinearRegressionModel, TiDEModel
+from darts.models import TiDEModel
 
 from common.anker_repository import AnkerRepository
 from common.db_repository import DbRepository, DEFAULT_DB_ENV_VAR, get_db_connection_string
@@ -83,7 +83,7 @@ def build_inputs_from_db(
     forecast_service: ForecastService,
     horizon: int,
     consumption_model: TiDEModel,
-    solar_model: LinearRegressionModel,
+    solar_model: Any,
     soc_value: float,
 ) -> OptimizationInputs:
     consumption_ts = forecast_service.predict_next_24_hours_consumption(

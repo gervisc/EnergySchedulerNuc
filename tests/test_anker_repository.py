@@ -8,21 +8,11 @@ from requests import Session
 from requests.exceptions import RequestException
 
 from common import anker_repository as ar
+from common.env_utils import load_repo_env_local
 
 
 def _load_env_local() -> None:
-     env_file =   Path(__file__).resolve().parents[1] / "env.local"
-     if env_file.exists():
-        with env_file.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip("\"'")
-                if key and value and key not in os.environ:
-                    os.environ[key] = value
+    load_repo_env_local(Path(__file__))
 
 
 def _repo_from_env() -> ar.AnkerRepository:

@@ -7,6 +7,7 @@ import pytest
 import datetime
 
 from common.db_repository import DEFAULT_DB_ENV_VAR, DbRepository, get_db_connection_string
+from common.env_utils import load_repo_env_local
 from Scheduler.schedule_runner import (
     apply_charging_options,
     create_anker_repository_from_env,
@@ -18,19 +19,7 @@ from Scheduler.schedule_runner import (
 
 
 def _load_env_local() -> None:
-    env_path = Path(__file__).resolve().parents[1] / "env.local"
-    if not env_path.exists():
-        return
-    with env_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip("\"'")
-            if key and value and key not in os.environ:
-                os.environ[key] = value
+    load_repo_env_local(Path(__file__))
 
 
 def test_run_optimization_smoke():

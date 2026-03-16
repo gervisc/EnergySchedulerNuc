@@ -5,7 +5,7 @@ import re
 import unicodedata
 from typing import Optional, Tuple, List, TYPE_CHECKING
 
-from sqlalchemy import and_, create_engine, func, text
+from sqlalchemy import and_, create_engine, func, text, union_all
 from sqlalchemy.orm import Session, sessionmaker
 
 from common.entities import Base, WeatherRecord, AnkerData, AnkerDataOld,  EnergyPrice, Scheduler
@@ -100,33 +100,53 @@ class DbRepository:
     def get_hourly_solar_with_weather(self):
         """Return hourly solar totals joined with hourly-aggregated weather data.
 
-        Solar total = solar_to_battery_total + solar_to_grid_total + solar_to_home_total.
+        Solar total combines hourly values from both AnkerData_old and AnkerData.
         """
-        solar_hour = func.from_unixtime(
-            func.floor(func.unix_timestamp(AnkerDataOld.Timestamp) / 3600) * 3600
-        ).label("hour")
-        weather_hour = func.from_unixtime(
-            func.floor(func.unix_timestamp(WeatherRecord.timestamp) / 3600) * 3600
-        ).label("hour")
-
-        solar_total = func.sum(
-            func.coalesce(AnkerDataOld.solar_to_battery_total, 0)
-            + func.coalesce(AnkerDataOld.solar_to_grid_total, 0)
-            + func.coalesce(AnkerDataOld.solar_to_home_total, 0)
-        ).label("solar_total")
+        solar_union = union_all(
+            self.session.query(
+                func.from_unixtime(
+                    func.floor(func.unix_timestamp(AnkerDataOld.Timestamp) / 3600) * 3600
+                ).label("hour"),
+                func.sum(
+                    func.coalesce(AnkerDataOld.solar_to_battery_total, 0)
+                    + func.coalesce(AnkerDataOld.solar_to_grid_total, 0)
+                    + func.coalesce(AnkerDataOld.solar_to_home_total, 0)
+                ).label("solar_total"),
+            )
+            .group_by(
+                func.from_unixtime(
+                    func.floor(func.unix_timestamp(AnkerDataOld.Timestamp) / 3600) * 3600
+                )
+            )
+            .statement,
+            self.session.query(
+                func.from_unixtime(
+                    func.floor(func.unix_timestamp(AnkerData.Timestamp) / 3600) * 3600
+                ).label("hour"),
+                func.sum(func.coalesce(AnkerData.solar_total, 0)).label("solar_total"),
+            )
+            .group_by(
+                func.from_unixtime(
+                    func.floor(func.unix_timestamp(AnkerData.Timestamp) / 3600) * 3600
+                )
+            )
+            .statement,
+        ).subquery()
 
         solar_subq = (
             self.session.query(
-                solar_hour,
-                solar_total,
+                solar_union.c.hour,
+                func.sum(solar_union.c.solar_total).label("solar_total"),
             )
-            .group_by(solar_hour)
+            .group_by(solar_union.c.hour)
             .subquery()
         )
 
         weather_subq = (
             self.session.query(
-                weather_hour,
+                func.from_unixtime(
+                    func.floor(func.unix_timestamp(WeatherRecord.timestamp) / 3600) * 3600
+                ).label("hour"),
                 func.avg(WeatherRecord.pressure).label("pressure"),
                 func.avg(WeatherRecord.temperature).label("temperature"),
                 func.avg(WeatherRecord.cloud_are_fraction).label("cloud_are_fraction"),
@@ -135,7 +155,11 @@ class DbRepository:
                 func.avg(WeatherRecord.wind_from_direction).label("wind_from_direction"),
                 func.avg(WeatherRecord.wind_speed).label("wind_speed"),
             )
-            .group_by(weather_hour)
+            .group_by(
+                func.from_unixtime(
+                    func.floor(func.unix_timestamp(WeatherRecord.timestamp) / 3600) * 3600
+                )
+            )
             .subquery()
         )
 

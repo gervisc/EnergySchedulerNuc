@@ -10,6 +10,7 @@ import pytest
 from requests import Session
 
 from common.anker_api import api as api_module
+from common.env_utils import load_repo_env_local
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -17,15 +18,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 @pytest.fixture(scope="session", autouse=True)
 def load_env():
     """Load environment variables from env.local file if it exists."""
-    env_file = Path(__file__).resolve().parents[1] / "env.local"
-    if env_file.exists():
-        with env_file.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    key, _, value = line.partition("=")
-                    if key and value:
-                        os.environ[key] = value
+    load_repo_env_local(Path(__file__), overwrite=True)
 
 
 @pytest.fixture

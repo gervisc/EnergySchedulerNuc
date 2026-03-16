@@ -1,10 +1,10 @@
 import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import pandas as pd
 from darts import TimeSeries
-from darts.models import LinearRegressionModel, TiDEModel
+from darts.models import TiDEModel
 
 from common.time_features import FEAT_ORDER, prepare_time_features
 from common.db_repository import DbRepository
@@ -33,12 +33,14 @@ class ForecastService:
             raise ValueError(f"TiDE model path does not exist: {model_path}")
         return TiDEModel.load(model_path)
 
-    def load_solar_model(self, model_path: str) -> LinearRegressionModel:
-        """Load a saved solar yield model from disk."""
+    def load_solar_model(self, model_path: str) -> Any:
+        """Load a saved AutoGluon solar yield model from disk."""
+        from autogluon.tabular import TabularPredictor
+
         path = Path(model_path)
         if not path.exists():
             raise ValueError(f"Solar model path does not exist: {model_path}")
-        return LinearRegressionModel.load(str(path))
+        return TabularPredictor.load(str(path))
 
     def predict_next_24_hours_consumption(
         self,
@@ -132,7 +134,7 @@ class ForecastService:
 
     def predict_next_24_hours_solar(
         self,
-        model: LinearRegressionModel,
+        model: Any,
         horizon: int,
     ) -> TimeSeries:
         """Predict the next 24 hours of solar yield using weather + time features."""
@@ -187,11 +189,7 @@ class ForecastService:
         if len(feature_frame) < horizon:
             raise ValueError("Not enough weather rows to produce solar prediction")
 
-        sk_model = getattr(model, "model", None) or getattr(model, "_model", None)
-        if sk_model is None:
-            raise ValueError("Solar model does not expose an underlying sklearn model")
-
-        y_pred = sk_model.predict(feature_frame.to_numpy())
+        y_pred = model.predict(feature_frame)
 
         pred_df = pd.DataFrame(
             {

@@ -2,6 +2,7 @@
 /.venv
 /.vscode
 /Models
+/SolarYieldPrediction/AutogluonModels
 /env.local
 __pycache__/
 *.pyc
