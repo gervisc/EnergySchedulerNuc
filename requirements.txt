@@ -6,8 +6,6 @@ python-dotenv
 requests
 pyomo
 u8darts[torch]
-xgboost
-lightgbm
-catboost
+autogluon.tabular
 cryptography
 aiofiles
