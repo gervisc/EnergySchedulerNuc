@@ -99,14 +99,12 @@ def build_battery_milp(
         inputs.current_soc_kwh = minimum_level
 
     def _loss_term(t: int) -> float:
-        return battery_loss * dt_hours[t] if inputs.solar_kwh[t] < 0 else 0.0
+        return battery_loss * dt_hours[t] if inputs.solar_kwh[t] <= 0 else 0.0
 
     def _charge_rate_for_step(t: int) -> float:
         max_charge_rate = (
             (battery_capcity_kwh - inputs.current_soc_kwh)
             / (charge_efficiency * dt_hours[t])
-            if dt_hours[t] > 0
-            else 0.0
         )
         if t == 0 and max_charge_rate < charge_rate:
             rate = max(math.floor(max_charge_rate * 1000.0) / 1000.0, 0.0)
@@ -119,8 +117,6 @@ def build_battery_milp(
             (inputs.current_soc_kwh - minimum_level - _loss_term(t))
             * charge_efficiency
             / dt_hours[t]
-            if dt_hours[t] > 0
-            else 0.0
         )
         if t == 0 and max_discharge_rate < discharge_rate:
             rate = max(math.ceil(max_discharge_rate * 1000.0) / 1000.0, 0.0)
