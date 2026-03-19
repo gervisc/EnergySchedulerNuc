@@ -88,7 +88,7 @@ def build_battery_milp(
 
     
      
-    battery_loss = 0.003 #kWh lost per hour when battery is active (charging or discharging)
+    battery_loss = 0.018 #kWh lost per hour when battery is active (charging or discharging)
     charge_efficiency = 0.8
     discharge_rate =0.400
     charge_rate = 0.400
@@ -98,15 +98,47 @@ def build_battery_milp(
     if(inputs.current_soc_kwh < minimum_level):
         inputs.current_soc_kwh = minimum_level
 
+    def _loss_term(t: int) -> float:
+        return battery_loss * dt_hours[t] if inputs.solar_kwh[t] < 0 else 0.0
+
+    def _charge_rate_for_step(t: int) -> float:
+        max_charge_rate = (
+            (battery_capcity_kwh - inputs.current_soc_kwh)
+            / (charge_efficiency * dt_hours[t])
+            if dt_hours[t] > 0
+            else 0.0
+        )
+        if t == 0 and max_charge_rate < charge_rate:
+            rate = max(math.floor(max_charge_rate * 1000.0) / 1000.0, 0.0)
+        else:
+            rate = charge_rate
+        return rate
+
+    def _discharge_rate_for_step(t: int) -> float:
+        max_discharge_rate = (
+            (inputs.current_soc_kwh - minimum_level - _loss_term(t))
+            * charge_efficiency
+            / dt_hours[t]
+            if dt_hours[t] > 0
+            else 0.0
+        )
+        if t == 0 and max_discharge_rate < discharge_rate:
+            rate = max(math.ceil(max_discharge_rate * 1000.0) / 1000.0, 0.0)
+        else:
+            rate = discharge_rate
+        return rate
+
     #battery balance
     def battery_balance_rule(m, t):
             prev_energy = (inputs.current_soc_kwh if t==0 else m.soc_kwh[t - 1])
+            step_charge_rate = _charge_rate_for_step(int(t))
+            step_discharge_rate = _discharge_rate_for_step(int(t))
             return (
-                m.soc_kwh[t] ==  prev_energy + 
+                m.soc_kwh[t] ==  prev_energy +
                 m.solar_charge_on[t] * inputs.solar_kwh[t] * dt_hours[t] * solar_charge_efficiency
-                - m.discharge_on[t] * discharge_rate / charge_efficiency * dt_hours[t]
-                + m.charge_on[t] * charge_rate * charge_efficiency * dt_hours[t]                   
-                -battery_loss* dt_hours[t]
+                - m.discharge_on[t] * step_discharge_rate / charge_efficiency * dt_hours[t]
+                + m.charge_on[t] * step_charge_rate * charge_efficiency * dt_hours[t]
+                - _loss_term(t)
         )
 
     m.soc_update = pyo.Constraint(m.T, rule=battery_balance_rule)
@@ -116,10 +148,12 @@ def build_battery_milp(
 
     # Constraint definition: grid import (no-export vs export-allowed).
     def grid_rule(m, t):
+        step_charge_rate = _charge_rate_for_step(int(t))
+        step_discharge_rate = _discharge_rate_for_step(int(t))
         return (m.grid_kwh[t] == 
         - (1-m.solar_charge_on[t]) * inputs.solar_kwh[t]* dt_hours[t] 
-        - (m.discharge_on[t]) * discharge_rate * dt_hours[t] 
-        + (m.charge_on[t]) * charge_rate * dt_hours[t]
+        - (m.discharge_on[t]) * step_discharge_rate * dt_hours[t] 
+        + (m.charge_on[t]) * step_charge_rate * dt_hours[t]
         + inputs.consumption_kwh[t] * dt_hours[t]
         )
     m.grid = pyo.Constraint(m.T, rule=grid_rule)
