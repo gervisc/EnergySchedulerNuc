@@ -14,6 +14,10 @@ class OptimizationInputs:
     current_soc_kwh: float
 
 
+def clamp_near_zero(x: float, eps: float = 1e-6) -> float:
+    return 0.0 if abs(x) < eps else x
+
+
 def _remaining_steps_in_hour(now_utc: datetime.datetime, step_minutes: int) -> int:
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
@@ -71,6 +75,14 @@ def build_battery_milp(
 
     Decision: charge or not per hour (binary). Objective: minimize grid cost.
     """
+    inputs = OptimizationInputs(
+        consumption_kwh=[clamp_near_zero(v) for v in inputs.consumption_kwh],
+        solar_kwh=[clamp_near_zero(v) for v in inputs.solar_kwh],
+        price_per_kwh=[clamp_near_zero(v) for v in inputs.price_per_kwh],
+        expected_discharge_sell_price=clamp_near_zero(inputs.expected_discharge_sell_price),
+        current_soc_kwh=clamp_near_zero(inputs.current_soc_kwh),
+    )
+
     horizon = min(len(inputs.consumption_kwh), len(inputs.solar_kwh), len(inputs.price_per_kwh))
     if horizon <= 0:
         raise ValueError("No horizon available for optimization")
