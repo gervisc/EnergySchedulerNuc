@@ -193,6 +193,20 @@ def run_optimization(
                 list(inputs.solar_kwh),
                 list(inputs.price_per_kwh),
             )
+        else:
+            first_t = int(model.T.first())
+            charge_on = bool(round(model.charge_on[first_t]()))
+            solar_charge_on = bool(round(model.solar_charge_on[first_t]()))
+            discharge_on = bool(round(model.discharge_on[first_t]()))
+            if charge_on:
+                mode = "charge"
+            elif solar_charge_on:
+                mode = "solar_charge"
+            elif discharge_on:
+                mode = "discharge"
+            else:
+                mode = "idle"
+            LOGGER.info("t=%s mode=%s", first_t, mode)
         return model, results, inputs
 
 
