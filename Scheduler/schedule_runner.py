@@ -167,7 +167,7 @@ def run_optimization(
         if time_limit_sec is not None:
             solver.options["tmlim"] = int(time_limit_sec)
 
-        results = solver.solve(model, tee=False)
+        results = solver.solve(model, tee=True)
         solver_status = getattr(results.solver, "status", None)
         termination = getattr(results.solver, "termination_condition", None)
         has_solution = (
