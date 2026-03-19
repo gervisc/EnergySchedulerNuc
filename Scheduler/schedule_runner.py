@@ -184,16 +184,15 @@ def run_optimization(
                 solver_status,
                 termination,
             )
-            for t in model.T:
-                LOGGER.warning(
-                    "t=%s charge_on=%s solar_charge_on=%s discharge_on=%s soc_kwh=%s grid_kwh=%s",
-                    int(t),
-                    model.charge_on[t](),
-                    model.solar_charge_on[t](),
-                    model.discharge_on[t](),
-                    model.soc_kwh[t](),
-                    model.grid_kwh[t](),
-                )
+            LOGGER.warning(
+                "Optimization inputs: current_soc_kwh=%s expected_discharge_sell_price=%s "
+                "consumption_kwh=%s solar_kwh=%s price_per_kwh=%s",
+                inputs.current_soc_kwh,
+                inputs.expected_discharge_sell_price,
+                list(inputs.consumption_kwh),
+                list(inputs.solar_kwh),
+                list(inputs.price_per_kwh),
+            )
         return model, results, inputs
 
 
