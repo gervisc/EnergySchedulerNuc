@@ -12,6 +12,7 @@ from common.db_repository import DbRepository, DEFAULT_DB_ENV_VAR, get_db_connec
 from common.time_features import DEFAULT_LATITUDE, DEFAULT_LOCAL_TZ_NAME, DEFAULT_LONGITUDE
 from Scheduler.forecast_service import ForecastService
 from Scheduler.optimizer import OptimizationInputs, build_battery_milp, expand_inputs_to_steps
+from pyomo.opt import SolverStatus, TerminationCondition
 from pyomo.opt.results import SolverResults
 
 LOGGER = logging.getLogger(__name__)
@@ -167,6 +168,32 @@ def run_optimization(
             solver.options["tmlim"] = int(time_limit_sec)
 
         results = solver.solve(model, tee=False)
+        solver_status = getattr(results.solver, "status", None)
+        termination = getattr(results.solver, "termination_condition", None)
+        has_solution = (
+            solver_status == SolverStatus.ok
+            and termination in (
+                TerminationCondition.optimal,
+                TerminationCondition.locallyOptimal,
+                TerminationCondition.feasible,
+            )
+        )
+        if not has_solution:
+            LOGGER.warning(
+                "Optimization failed: solver_status=%s termination_condition=%s",
+                solver_status,
+                termination,
+            )
+            for t in model.T:
+                LOGGER.warning(
+                    "t=%s charge_on=%s solar_charge_on=%s discharge_on=%s soc_kwh=%s grid_kwh=%s",
+                    int(t),
+                    model.charge_on[t](),
+                    model.solar_charge_on[t](),
+                    model.discharge_on[t](),
+                    model.soc_kwh[t](),
+                    model.grid_kwh[t](),
+                )
         return model, results, inputs
 
 
@@ -245,7 +272,7 @@ def apply_charging_options(
         elif discharge_on:
             usage_mode = "manual"
             preset = (0.4 + float(inputs.solar_kwh[first_idx])) * 1000.0
-        elif soc_kwh < 1.6 * 0.8:
+        elif soc_kwh < 1.6 * 0.8 and float(inputs.solar_kwh[first_idx]) < 1.25*float(inputs.consumption_kwh[first_idx]):
             usage_mode = "use_time"
             tariff_group = "off_peak"
         elif float(inputs.solar_kwh[first_idx]) > 1.6-soc_kwh or float(inputs.solar_kwh[first_idx]) < 0.05:
