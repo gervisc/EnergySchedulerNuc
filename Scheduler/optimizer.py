@@ -119,7 +119,7 @@ def build_battery_milp(
             / dt_hours[t]
         )
         if t == 0 and max_discharge_rate < discharge_rate:
-            rate = max(math.ceil(max_discharge_rate * 1000.0) / 1000.0, 0.0)
+            rate = max(math.floor(max_discharge_rate * 1000.0) / 1000.0, 0.0)
         else:
             rate = discharge_rate
         return rate
