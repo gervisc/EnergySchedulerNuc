@@ -147,6 +147,7 @@ API_ENDPOINTS: Final[dict] = {
     "get_device_charge_order_stats_list": "power_service/v1/app/order/get_charge_order_stats_list",  # works as member, date_type[week month year all], order_Status unknown, {"device_sn":deviceSn,"order_status":1,"date_type":"all","start_date":"","end_date":"","page":0,"page_size":10}
     "get_ocpp_endpoint_list": "power_service/v1/app/get_ocpp_endpoint_list",  # lists ocpp endpoints used by Anker, including source number per endpoint
     "get_device_ocpp_info": "power_service/v1/app/get_ocpp_info",  # works as member also for empty device SN, {"device_sn": deviceSn}, list device endpoint source number, default 0 if nothing found explicetly? (Useful only for EV charger devices)
+    "get_mqtt_info": "app/devicemanage/get_user_mqtt_info",  # mqtt endpoint and certificates for account
     # Power endpoints */v1/device/*
     "get_tamper_records": "power_service/v1/device/get_tamper_records",  # needs owner, not sure what it does, {"device_sn": deviceSn, "page_num": 1, "page_size": 10}
     "get_currency_list": "power_service/v1/currency/get_list",  # get list of supported currencies for power sites

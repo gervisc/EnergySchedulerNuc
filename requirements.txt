@@ -9,3 +9,4 @@ u8darts[torch]
 autogluon.tabular
 cryptography
 aiofiles
+paho-mqtt

@@ -891,6 +891,10 @@ class AnkerSolixClientSession:
         """Get a certain key from authenticated client login info."""
         return self._login_response.get(key)
 
+    def get_mqtt_info(self) -> dict:
+        """Get MQTT server information and client certificates for this account."""
+        return self.request("post", API_ENDPOINTS["get_mqtt_info"]).get("data") or {}
+
 
 class AnkerEncryptionHandler:
     """Anker Solix encryption handler class.

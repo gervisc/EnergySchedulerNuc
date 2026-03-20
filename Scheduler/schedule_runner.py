@@ -24,18 +24,32 @@ DEFAULT_BATTERY_CAPACITY_KWH = float(os.environ.get("BATTERY_CAPACITY_KWH", "1.6
 ENERGYMODEL_TIDE_ENV = "ENERGYMODEL_TIDE_PATH"
 ENERGYMODEL_SOLAR_ENV = "ENERGYMODEL_SOLAR_PATH"
 ANKER_ENV_VARS = ("ANKERUSER", "ANKERPASSWORD", "ANKERCOUNTRY", "SITE_ID", "DEVICE_SN")
+
+
+def _configured_log_level() -> int:
+    level_name = os.environ.get("LOG_LEVEL")
+    if not level_name:
+        raise ValueError("LOG_LEVEL must be set in the environment")
+    level = getattr(logging, level_name.upper(), None)
+    if not isinstance(level, int):
+        raise ValueError(f"Invalid LOG_LEVEL: {level_name}")
+    return level
+
+
+LOG_LEVEL = _configured_log_level()
 # Create a formatter for the log messages
-LOGGER.setLevel(logging.INFO)
+LOGGER.setLevel(LOG_LEVEL)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # Create a console handler
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)  # Set the log level for the console handler
+console_handler.setLevel(LOG_LEVEL)  # Set the log level for the console handler
 console_handler.setFormatter(formatter)  # Apply the formatter to the console handler
 
 # Add both handlers to the logger
 #logger.addHandler(file_handler)
-LOGGER.addHandler(console_handler)
+if not LOGGER.handlers:
+    LOGGER.addHandler(console_handler)
 
 def _series_to_list(series, horizon: Optional[int]) -> list[float]:
     df = series.to_dataframe()
