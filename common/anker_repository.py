@@ -225,11 +225,18 @@ class AnkerRepository:
         return metrics
 
     def _get_current_soc(self, api: AnkerSolixApi, scene_data: dict | None = None) -> float:
-        mqtt_soc = self._get_current_soc_from_mqtt(api=api)
+        mqtt_soc = self._get_current_soc_from_mqtt()
         if mqtt_soc is not None:
             return mqtt_soc
 
-        return self._get_current_soc_from_scene_data(scene_data or api.get_scene_info(siteId=self.site_id))
+        fallback_soc = self._get_current_soc_from_scene_data(
+            scene_data or api.get_scene_info(siteId=self.site_id)
+        )
+        self.logger.info(
+            "Falling back to Anker scene/API current SOC: %s",
+            fallback_soc,
+        )
+        return fallback_soc
 
     def _get_current_soc_from_scene_data(self, scene_data: dict) -> float:
         try:
@@ -238,23 +245,16 @@ class AnkerRepository:
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise ValueError("Unable to extract current SOC from Anker scene data") from exc
 
-    def _get_current_soc_from_mqtt(self, api: AnkerSolixApi | None = None) -> float | None:
+    def _get_current_soc_from_mqtt(self) -> float | None:
         if not USE_MQTT_FOR_CURRENT_SOC:
             return None
         timeout = MQTT_TIMEOUT_SECONDS
         trigger_timeout = MQTT_TRIGGER_SECONDS
 
-        if api is not None:
-            return self._request_current_soc_via_mqtt(
-                api=api,
-                timeout=timeout,
-                trigger_timeout=trigger_timeout,
-            )
-
-        standalone_api = self._get_api()
-        standalone_api.update_sites(siteId=self.site_id)
+        api = self._get_api()
+        api.update_sites(siteId=self.site_id)
         return self._request_current_soc_via_mqtt(
-            api=standalone_api,
+            api=api,
             timeout=timeout,
             trigger_timeout=trigger_timeout,
         )
