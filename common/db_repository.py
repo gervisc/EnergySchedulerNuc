@@ -315,10 +315,11 @@ class DbRepository:
                 Optional[float],
                 Optional[float],
                 Optional[float],
+                Optional[float],
             ]
         ],
     ) -> None:
-        """Upsert scheduler rows and delete entries older than 48 hours (UTC)."""
+        """Upsert scheduler rows."""
         if rows:
             min_ts = min(row[0] for row in rows)
             self.session.query(Scheduler).filter(Scheduler.timestamp >= min_ts).delete(
@@ -334,6 +335,7 @@ class DbRepository:
                     consumption=consumption,
                     grid=grid,
                     battery=battery,
+                    rate_kwh=rate_kwh,
                 )
                 for (
                     timestamp,
@@ -344,14 +346,11 @@ class DbRepository:
                     consumption,
                     grid,
                     battery,
+                    rate_kwh,
                 ) in rows
             ]
             self.session.add_all(objects)
 
-        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)
-        self.session.query(Scheduler).filter(Scheduler.timestamp < cutoff).delete(
-            synchronize_session=False
-        )
         self.session.commit()
 
     def get_expected_discharge_sell_price(self) -> Optional[float]:

@@ -11,7 +11,11 @@ from common.anker_repository import AnkerRepository
 from common.db_repository import DbRepository, DEFAULT_DB_ENV_VAR, get_db_connection_string
 from common.time_features import DEFAULT_LATITUDE, DEFAULT_LOCAL_TZ_NAME, DEFAULT_LONGITUDE
 from Scheduler.forecast_service import ForecastService
-from Scheduler.optimizer import OptimizationInputs, build_battery_milp, expand_inputs_to_steps
+from Scheduler.optimizer import (
+    OptimizationInputs,
+    build_battery_milp,
+    expand_inputs_to_steps,
+)
 from pyomo.opt import SolverStatus, TerminationCondition
 from pyomo.opt.results import SolverResults
 
@@ -139,7 +143,7 @@ def run_optimization(
     step_minutes: int,
     now_utc: datetime.datetime,
     anker_repo: AnkerRepository,
-) -> Tuple[pyo.ConcreteModel, Optional[SolverResults], OptimizationInputs]:
+) -> Tuple[pyo.ConcreteModel, Optional[SolverResults], OptimizationInputs, float]:
     connection_string = get_db_connection_string(DEFAULT_DB_ENV_VAR)
     with DbRepository(connection_string=connection_string, logger=LOGGER) as repo:
         soc_value = _store_anker_metrics(
@@ -172,11 +176,11 @@ def run_optimization(
             soc_value=soc_value,
         )
         inputs = expand_inputs_to_steps(inputs, step_minutes, now_utc=now_utc)
-        model = build_battery_milp(inputs, step_minutes=step_minutes)
+        model, first_discharge_rate_kw = build_battery_milp(inputs, step_minutes=step_minutes)
 
         solver = pyo.SolverFactory(SOLVER_NAME)
         if solver is None or not solver.available():
-            return model, None, inputs
+            return model, None, inputs, first_discharge_rate_kw
 
         if time_limit_sec is not None:
             solver.options["tmlim"] = int(time_limit_sec)
@@ -221,13 +225,14 @@ def run_optimization(
             else:
                 mode = "idle"
             LOGGER.info("t=%s mode=%s", first_t, mode)
-        return model, results, inputs
+        return model, results, inputs, first_discharge_rate_kw
 
 
 def apply_charging_options(
     model: pyo.ConcreteModel,
     results: Optional[SolverResults],
     inputs: OptimizationInputs,
+    first_discharge_rate_kw: float,
     step_minutes: int,
     now_utc: datetime.datetime,
     anker_repo: AnkerRepository,
@@ -235,6 +240,7 @@ def apply_charging_options(
     usage_mode = "use_time"
     tariff_group = "off_peak"
     preset = 0.0
+    first_rate_kwh: Optional[float] = None
     try:
         if results is None:
             return
@@ -262,6 +268,32 @@ def apply_charging_options(
             for i in range(horizon_len)
         ]
 
+        first_idx = int(model.T.first())
+        solar_charge_on = bool(round(model.solar_charge_on[first_idx]()))
+        charge_on = bool(round(model.charge_on[first_idx]()))
+        discharge_on = bool(round(model.discharge_on[first_idx]()))
+        soc_kwh = float(model.soc_kwh[first_idx]())
+
+        if solar_charge_on:
+            usage_mode = "manual"
+            preset = 0.0
+        elif charge_on:
+            usage_mode = "use_time"
+            tariff_group = "valley"
+        elif discharge_on:
+            usage_mode = "manual"
+            preset = (first_discharge_rate_kw + float(inputs.solar_kwh[first_idx])) * 1000.0
+        elif soc_kwh < 1.6 * 0.8 and float(inputs.solar_kwh[first_idx]) < 1.25*float(inputs.consumption_kwh[first_idx]):
+            usage_mode = "use_time"
+            tariff_group = "off_peak"
+        elif float(inputs.solar_kwh[first_idx]) > 1.6-soc_kwh or float(inputs.solar_kwh[first_idx]) < 0.05:
+            usage_mode = "manual"
+            preset = 0.0
+        else:
+            usage_mode = "manual"
+            preset = float(inputs.solar_kwh[first_idx]) * 1000.0
+        first_rate_kwh = (preset / 1000.0) * (step_minutes / 60.0)
+
         rows = []
         for t in model.T:
             idx = int(t)
@@ -277,6 +309,7 @@ def apply_charging_options(
                     float(inputs.consumption_kwh[idx]),
                     float(model.grid_kwh[t]()),
                     float(model.soc_kwh[t]()),
+                    first_rate_kwh if idx == first_idx else None,
                 )
             )
 
@@ -284,39 +317,15 @@ def apply_charging_options(
         with DbRepository(connection_string=connection_string, logger=LOGGER) as repo:
             repo.upsert_scheduler_rows(rows)
 
-        first_idx = int(model.T.first())
-        solar_charge_on = bool(round(model.solar_charge_on[first_idx]()))
-        charge_on = bool(round(model.charge_on[first_idx]()))
-        discharge_on = bool(round(model.discharge_on[first_idx]()))
-        soc_kwh = float(model.soc_kwh[first_idx]())
-
-        if solar_charge_on:
-            usage_mode = "manual"
-            preset = 0.0
-        elif charge_on:
-            usage_mode = "use_time"
-            tariff_group = "valley"
-        elif discharge_on:
-            usage_mode = "manual"
-            preset = (0.4 + float(inputs.solar_kwh[first_idx])) * 1000.0
-        elif soc_kwh < 1.6 * 0.8 and float(inputs.solar_kwh[first_idx]) < 1.25*float(inputs.consumption_kwh[first_idx]):
-            usage_mode = "use_time"
-            tariff_group = "off_peak"
-        elif float(inputs.solar_kwh[first_idx]) > 1.6-soc_kwh or float(inputs.solar_kwh[first_idx]) < 0.05:
-            usage_mode = "manual"
-            preset = 0.0
-        else:
-            usage_mode = "manual"
-            preset = float(inputs.solar_kwh[first_idx]) * 1000.0
-
 
     except Exception as e:
         LOGGER.exception("Failed to apply charging options: %s", e)
     LOGGER.info(
-        "Optimization result: usage_mode=%s tariff_group=%s preset=%.1f",
+        "Optimization result: usage_mode=%s tariff_group=%s preset=%.1f rate_kwh=%s",
         usage_mode,
         tariff_group,
         preset,
+        first_rate_kwh,
     )
     anker_repo.update_battery_actions(preset, tariff_group, usage_mode)
 
@@ -331,7 +340,7 @@ def apply_charging_options(
 if __name__ == "__main__":
     anker_repo = create_anker_repository_from_env(LOGGER)
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    model, results, inputs = run_optimization(
+    model, results, inputs, first_discharge_rate_kw = run_optimization(
         horizon=DEFAULT_HORIZON_HOURS,
         time_limit_sec=DEFAULT_TIME_LIMIT_SEC,
         step_minutes=DEFAULT_STEP_MINUTES,
@@ -342,6 +351,7 @@ if __name__ == "__main__":
         model=model,
         results=results,
         inputs=inputs,
+        first_discharge_rate_kw=first_discharge_rate_kw,
         step_minutes=DEFAULT_STEP_MINUTES,
         now_utc=now_utc,
         anker_repo=anker_repo,

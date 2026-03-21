@@ -66,11 +66,10 @@ def expand_inputs_to_steps(
         current_soc_kwh=inputs.current_soc_kwh,
     )
 
-
 def build_battery_milp(
     inputs: OptimizationInputs,
     step_minutes: int,
-) -> pyo.ConcreteModel:
+) -> tuple[pyo.ConcreteModel, float]:
     """Build a simple MILP for battery charging decisions.
 
     Decision: charge or not per hour (binary). Objective: minimize grid cost.
@@ -197,4 +196,4 @@ def build_battery_milp(
 
     m.objective = pyo.Objective(rule=objective_rule, sense=pyo.minimize)
 
-    return m
+    return m, _discharge_rate_for_step(0)

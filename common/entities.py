@@ -77,3 +77,4 @@ class Scheduler(Base):
     consumption = Column(Float, nullable=True)
     grid = Column(Float, nullable=True)
     battery = Column(Float, nullable=True)
+    rate_kwh = Column(Float, nullable=True)
