@@ -82,12 +82,10 @@ class Scheduler(Base):
 class DischargeEfficiency(Base):
     __tablename__ = 'vw_discharge_efficiency'
     __table_args__ = {'schema': 'energy'}
-    timestamp = Column(DateTime, nullable=False, primary_key=True)
-    efficiency = Column(Float, nullable=False)
+    efficiency = Column(Float, nullable=False, primary_key=True)
 
 class ChargeEfficiency(Base):
     __tablename__ = 'vw_charge_efficiency'
     __table_args__ = {'schema': 'energy'}
-    timestamp = Column(DateTime, nullable=False, primary_key=True)
-    solar = Column(Float, nullable=False)
+    solar = Column(Float, nullable=False, primary_key=True)
     net = Column(Float, nullable=False)
