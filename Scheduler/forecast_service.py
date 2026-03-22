@@ -42,12 +42,12 @@ class ForecastService:
             raise ValueError(f"Solar model path does not exist: {model_path}")
         return TabularPredictor.load(str(path))
 
-    def predict_next_24_hours_consumption(
+    def predict_future_consumption(
         self,
         model: TiDEModel,
         horizon: int,
     ) -> TimeSeries:
-        """Predict the next 24 hours (default) from historical data.
+        """Predict the requested future horizon from historical data.
 
         Uses the preparation service to build the last 48 hours of history
         and time-based covariates for history + horizon.
@@ -132,13 +132,13 @@ class ForecastService:
             fill_missing_dates=True,
         )
 
-    def predict_next_24_hours_solar(
+    def predict_future_solar(
         self,
         model: Any,
         horizon: int,
     ) -> TimeSeries:
-        """Predict the next 24 hours of solar yield using weather + time features."""
-        weather_rows = self.repo.get_current_and_next_24_hours_weather()
+        """Predict the requested future horizon of solar yield using weather + time features."""
+        weather_rows = self.repo.get_current_and_future_hours_weather(horizon_hours=horizon)
         if not weather_rows:
             raise ValueError("No weather data available for solar prediction")
 

@@ -214,14 +214,14 @@ class DbRepository:
             ) in rows
         ]
 
-    def get_current_and_next_24_hours_weather(self):
-        """Return hourly-aggregated weather data for the current hour plus next 23 hours (UTC).
+    def get_current_and_future_hours_weather(self, horizon_hours: int):
+        """Return hourly-aggregated weather data for the current hour plus future horizon (UTC).
 
         Hours are bucketed to the start of the hour in UTC.
         """
         now = datetime.datetime.now(datetime.timezone.utc)
         start = now.replace(minute=0, second=0, microsecond=0)
-        end = start + datetime.timedelta(hours=24)
+        end = start + datetime.timedelta(hours=horizon_hours)
 
         weather_hour = func.from_unixtime(
             func.floor(func.unix_timestamp(WeatherRecord.timestamp) / 3600) * 3600
@@ -270,10 +270,11 @@ class DbRepository:
             ) in rows
         ]
 
-    def get_current_and_next_24_hours_prices(self):
-        """Return the current electricity price and all future prices (UTC)."""
+    def get_current_and_future_hours_prices(self, horizon_hours: int):
+        """Return the current electricity price and configured future prices (UTC)."""
         now = datetime.datetime.now(datetime.timezone.utc)
         start = now.replace(minute=0, second=0, microsecond=0)
+        end = start + datetime.timedelta(hours=horizon_hours)
 
         future_rows = (
             self.session.query(
@@ -283,6 +284,7 @@ class DbRepository:
             )
             .filter(
                 EnergyPrice.timestamp >= start,
+                EnergyPrice.timestamp < end,
             )
             .order_by(EnergyPrice.timestamp)
             .all()
@@ -313,10 +315,9 @@ class DbRepository:
         return ts.replace(tzinfo=datetime.timezone.utc), value
 
     def get_charge_efficiencies(self) -> Optional[Tuple[float, float]]:
-        """Return latest net and solar charge efficiencies."""
+        """Return net and solar charge efficiencies."""
         row = (
             self.session.query(ChargeEfficiency.net, ChargeEfficiency.solar)
-            .order_by(ChargeEfficiency.timestamp.desc())
             .first()
         )
         if not row:
@@ -325,10 +326,9 @@ class DbRepository:
         return float(net_efficiency), float(solar_efficiency)
 
     def get_discharge_efficiency(self) -> Optional[float]:
-        """Return latest discharge efficiency."""
+        """Return discharge efficiency."""
         row = (
             self.session.query(DischargeEfficiency.efficiency)
-            .order_by(DischargeEfficiency.timestamp.desc())
             .first()
         )
         if not row:

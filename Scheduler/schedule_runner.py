@@ -105,11 +105,11 @@ def build_inputs_from_db(
     solar_model: Any,
     soc_value: float,
 ) -> OptimizationInputs:
-    consumption_ts = forecast_service.predict_next_24_hours_consumption(
+    consumption_ts = forecast_service.predict_future_consumption(
         model=consumption_model,
         horizon=horizon,
     )
-    solar_ts = forecast_service.predict_next_24_hours_solar(
+    solar_ts = forecast_service.predict_future_solar(
         model=solar_model,
         horizon=horizon,
     )
@@ -117,7 +117,7 @@ def build_inputs_from_db(
     consumption_kwh = _series_to_list(consumption_ts, horizon=horizon)
     solar_kwh = _series_to_list(solar_ts, horizon=horizon)
 
-    price_rows = repo.get_current_and_next_24_hours_prices()
+    price_rows = repo.get_current_and_future_hours_prices(horizon_hours=horizon)
     price_per_kwh = [price for _, price, _ in price_rows][:horizon]
 
     expected_sell = repo.get_expected_discharge_sell_price() or 0.0
