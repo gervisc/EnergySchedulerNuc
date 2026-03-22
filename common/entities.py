@@ -78,3 +78,16 @@ class Scheduler(Base):
     grid = Column(Float, nullable=True)
     battery = Column(Float, nullable=True)
     rate_kwh = Column(Float, nullable=True)
+
+class DischargeEfficiency(Base):
+    __tablename__ = 'vw_discharge_efficiency'
+    __table_args__ = {'schema': 'energy'}
+    timestamp = Column(DateTime, nullable=False, primary_key=True)
+    efficiency = Column(Float, nullable=False)
+
+class ChargeEfficiency(Base):
+    __tablename__ = 'vw_charge_efficiency'
+    __table_args__ = {'schema': 'energy'}
+    timestamp = Column(DateTime, nullable=False, primary_key=True)
+    solar = Column(Float, nullable=False)
+    net = Column(Float, nullable=False)

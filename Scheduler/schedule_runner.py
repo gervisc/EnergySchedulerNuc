@@ -121,6 +121,15 @@ def build_inputs_from_db(
     price_per_kwh = [price for _, price, _ in price_rows][:horizon]
 
     expected_sell = repo.get_expected_discharge_sell_price() or 0.0
+    charge_efficiencies = repo.get_charge_efficiencies()
+    discharge_efficiency = repo.get_discharge_efficiency()
+
+    if charge_efficiencies is None:
+        raise ValueError("No charge efficiency found in energy.vw_charge_efficiency")
+    if discharge_efficiency is None:
+        raise ValueError("No discharge efficiency found in energy.vw_discharge_efficiency")
+
+    charge_efficiency, solar_charge_efficiency = charge_efficiencies
 
     current_soc_kwh = (float(soc_value) / 100.0) * DEFAULT_BATTERY_CAPACITY_KWH
 
@@ -134,6 +143,9 @@ def build_inputs_from_db(
         price_per_kwh=price_per_kwh[:horizon],
         expected_discharge_sell_price=expected_sell,
         current_soc_kwh=current_soc_kwh,
+        charge_efficiency=charge_efficiency,
+        solar_charge_efficiency=solar_charge_efficiency,
+        discharge_efficiency=discharge_efficiency,
     )
 
 

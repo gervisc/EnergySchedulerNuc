@@ -12,6 +12,9 @@ class OptimizationInputs:
     price_per_kwh: Sequence[float]
     expected_discharge_sell_price: float
     current_soc_kwh: float
+    charge_efficiency: float
+    solar_charge_efficiency: float
+    discharge_efficiency: float
 
 
 def clamp_near_zero(x: float, eps: float = 1e-6) -> float:
@@ -64,6 +67,9 @@ def expand_inputs_to_steps(
         price_per_kwh=_expand(inputs.price_per_kwh),
         expected_discharge_sell_price=inputs.expected_discharge_sell_price,
         current_soc_kwh=inputs.current_soc_kwh,
+        charge_efficiency=inputs.charge_efficiency,
+        solar_charge_efficiency=inputs.solar_charge_efficiency,
+        discharge_efficiency=inputs.discharge_efficiency,
     )
 
 def build_battery_milp(
@@ -80,6 +86,9 @@ def build_battery_milp(
         price_per_kwh=[clamp_near_zero(v) for v in inputs.price_per_kwh],
         expected_discharge_sell_price=clamp_near_zero(inputs.expected_discharge_sell_price),
         current_soc_kwh=clamp_near_zero(inputs.current_soc_kwh),
+        charge_efficiency=clamp_near_zero(inputs.charge_efficiency),
+        solar_charge_efficiency=clamp_near_zero(inputs.solar_charge_efficiency),
+        discharge_efficiency=clamp_near_zero(inputs.discharge_efficiency),
     )
 
     horizon = min(len(inputs.consumption_kwh), len(inputs.solar_kwh), len(inputs.price_per_kwh))
@@ -100,10 +109,11 @@ def build_battery_milp(
     
      
     battery_loss = 0.018 #kWh lost per hour when battery is active (charging or discharging)
-    charge_efficiency = 0.8
+    charge_efficiency = inputs.charge_efficiency
     discharge_rate =0.400
     charge_rate = 0.400
-    solar_charge_efficiency = 0.85
+    solar_charge_efficiency = inputs.solar_charge_efficiency
+    discharge_efficiency = inputs.discharge_efficiency
     battery_capcity_kwh = 1.6
     minimum_level = 0.2 * battery_capcity_kwh
     if(inputs.current_soc_kwh < minimum_level):
@@ -126,7 +136,7 @@ def build_battery_milp(
     def _discharge_rate_for_step(t: int) -> float:
         max_discharge_rate = (
             (inputs.current_soc_kwh - minimum_level - _loss_term(t))
-            * charge_efficiency
+            * discharge_efficiency
             / dt_hours[t]
         )
         if t == 0 and max_discharge_rate < discharge_rate:
@@ -143,7 +153,7 @@ def build_battery_milp(
             return (
                 m.soc_kwh[t] ==  prev_energy +
                 m.solar_charge_on[t] * inputs.solar_kwh[t] * dt_hours[t] * solar_charge_efficiency
-                - m.discharge_on[t] * step_discharge_rate / charge_efficiency * dt_hours[t]
+                - m.discharge_on[t] * step_discharge_rate / discharge_efficiency * dt_hours[t]
                 + m.charge_on[t] * step_charge_rate * charge_efficiency * dt_hours[t]
                 - _loss_term(t)
         )
@@ -190,7 +200,10 @@ def build_battery_milp(
         for t in m.T:
             total_cost += (
                 inputs.price_per_kwh[t] * m.grid_kwh[t]
-                - (m.soc_kwh[t] * inputs.expected_discharge_sell_price * charge_efficiency if t == last_t else 0)
+                - (
+                    m.soc_kwh[t] * inputs.expected_discharge_sell_price * discharge_efficiency
+                    if t == last_t else 0
+                )
             )
         return total_cost
 

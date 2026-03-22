@@ -8,7 +8,16 @@ from typing import Optional, Tuple, List, TYPE_CHECKING
 from sqlalchemy import and_, create_engine, func, text, union_all
 from sqlalchemy.orm import Session, sessionmaker
 
-from common.entities import Base, WeatherRecord, AnkerData, AnkerDataOld,  EnergyPrice, Scheduler
+from common.entities import (
+    Base,
+    WeatherRecord,
+    AnkerData,
+    AnkerDataOld,
+    EnergyPrice,
+    Scheduler,
+    ChargeEfficiency,
+    DischargeEfficiency,
+)
 from common.constants import CONSUMPTION_FACTOR
 
 if TYPE_CHECKING:
@@ -302,6 +311,29 @@ class DbRepository:
             return None
         ts, value = row
         return ts.replace(tzinfo=datetime.timezone.utc), value
+
+    def get_charge_efficiencies(self) -> Optional[Tuple[float, float]]:
+        """Return latest net and solar charge efficiencies."""
+        row = (
+            self.session.query(ChargeEfficiency.net, ChargeEfficiency.solar)
+            .order_by(ChargeEfficiency.timestamp.desc())
+            .first()
+        )
+        if not row:
+            return None
+        net_efficiency, solar_efficiency = row
+        return float(net_efficiency), float(solar_efficiency)
+
+    def get_discharge_efficiency(self) -> Optional[float]:
+        """Return latest discharge efficiency."""
+        row = (
+            self.session.query(DischargeEfficiency.efficiency)
+            .order_by(DischargeEfficiency.timestamp.desc())
+            .first()
+        )
+        if not row:
+            return None
+        return float(row[0])
 
     def upsert_scheduler_rows(
         self,
