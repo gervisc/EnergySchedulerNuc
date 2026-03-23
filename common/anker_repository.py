@@ -166,7 +166,7 @@ class AnkerRepository:
         solar_charge = _to_float(solar_data["solar_to_battery_total"])
         solar_yield = _to_float(solar_data["solar_total"])
         solar_grid_charge = _to_float(solar_data["solar_to_grid_total"])
-        grid_charge = _to_float(solarbank_data["charge_total"])
+        grid_charge = _to_float(solarbank_data["charge_total"])- _to_float(solarbank_data["solar_to_battery_total"])
         discharge = _to_float(solarbank_data["battery_discharging_total"])
         grid_export = _to_float(grid_data["solar_to_grid_total"])
         grid_import = _to_float(home_data["grid_to_home_total"])
