@@ -1,0 +1,1 @@
+{"timestamp": "2026-03-02T23:45:12.263320+01:00", "values": {"solar_charge": 0.27, "solar_yield": 1.5, "solar_grid_charge": 0.7, "grid_charge": 0.69, "discharge": 4.48, "grid_export": 0.7, "grid_home": 3.77, "home_consumption": 4.48, "state_of_charge": 99.0}}
